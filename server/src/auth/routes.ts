@@ -13,17 +13,29 @@ const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173';
 
 export const authRouter = Router();
 
+const STATE_COOKIE = 'oauth_state';
+const IS_PROD = process.env.NODE_ENV === 'production';
+
 authRouter.get('/twitch', (req, res) => {
   const state = randomUUID();
-  req.session.oauthState = state;
+  // Store state in a direct cookie — avoids session file-store issues across redirects
+  res.cookie(STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: 'lax',
+    maxAge: 5 * 60 * 1000,
+  });
   res.redirect(getTwitchAuthUrl(state));
 });
 
 authRouter.get('/callback', async (req, res) => {
   const { code, state, error } = req.query as Record<string, string>;
+  const cookieHeader = req.headers.cookie ?? '';
+  const storedState = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith(STATE_COOKIE + '='))?.split('=')[1];
+  res.clearCookie(STATE_COOKIE);
 
   if (error) { res.redirect(`${CLIENT_URL}/login?error=twitch_denied`); return; }
-  if (!state || state !== req.session.oauthState) {
+  if (!state || !storedState || state !== storedState) {
     res.redirect(`${CLIENT_URL}/login?error=invalid_state`); return;
   }
 
