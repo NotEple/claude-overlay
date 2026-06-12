@@ -1,0 +1,16 @@
+{
+  "whitelist": [
+    {
+      "username": "dankchapbot",
+      "added_by": "eple7",
+      "added_at": "2026-06-12T12:52:19.335Z",
+      "isAdmin": true
+    },
+    {
+      "username": "eple_bot",
+      "added_by": "dankchapbot",
+      "added_at": "2026-06-12T13:06:46.142Z",
+      "isAdmin": false
+    }
+  ]
+}
