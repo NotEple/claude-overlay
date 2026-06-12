@@ -5,7 +5,6 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import multer from 'multer';
 import session from 'express-session';
-import FileStore from 'session-file-store';
 import { randomUUID } from 'crypto';
 import { mkdirSync } from 'fs';
 import { authRouter } from './auth/routes.js';
@@ -32,14 +31,7 @@ mkdirSync('/tmp/obs-uploads', { recursive: true });
 // ---------------------------------------------------------------------------
 // Session middleware (shared between Express and Socket.io)
 // ---------------------------------------------------------------------------
-const FileStoreSession = FileStore(session);
-
 const sessionMiddleware = session({
-  store: new FileStoreSession({
-    path: `${DATA_DIR}/sessions`,
-    ttl: 7 * 24 * 60 * 60,
-    retries: 0,
-  }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
