@@ -51,6 +51,7 @@ const sessionMiddleware = session({
   },
 });
 
+app.set('trust proxy', 1);
 app.use(sessionMiddleware);
 app.use(cors({ origin: CLIENT_URL, credentials: true }));
 app.use(express.json());
