@@ -62,7 +62,10 @@ authRouter.get('/callback', async (req, res) => {
       isAdmin: login === OWNER || (whitelistEntry?.isAdmin ?? false),
     };
 
-    res.redirect(`${CLIENT_URL}/`);
+    req.session.save((err) => {
+      if (err) console.error('Session save error:', err);
+      res.redirect(`${CLIENT_URL}/`);
+    });
   } catch (err) {
     console.error('OAuth callback error:', err);
     res.redirect(`${CLIENT_URL}/login?error=server_error`);
