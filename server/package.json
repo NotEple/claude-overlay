@@ -17,12 +17,13 @@
     "socket.io": "^4.7.2"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/express-session": "^1.17.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/express-session": "^1.19.0",
     "@types/multer": "^1.4.11",
     "@types/node": "^25.9.3",
     "@types/session-file-store": "^1.2.5",
+    "@types/socket.io": "^3.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }
