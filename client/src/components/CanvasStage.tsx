@@ -117,6 +117,8 @@ function addResizeHandle(
     const startH = container.offsetHeight;
     const startLeft = parseFloat(container.style.left) || 0;
     const startTop = parseFloat(container.style.top) || 0;
+    let lastEmit = 0;
+    let pendingChanges: Partial<CanvasElement> | null = null;
     const onMove = (ev: MouseEvent) => {
       const zoom = getZoom();
       const dx = (ev.clientX - startX) / zoom;
@@ -193,19 +195,20 @@ function addResizeHandle(
       container.style.top = newTop + "px";
       setScale(container, newSX, newSY);
       applyNodeTransform(container);
-      onUpdate({
-        x: newLeft,
-        y: newTop,
-        width: newW,
-        height: newH,
-        scaleX: newSX,
-        scaleY: newSY,
-      });
+      const changes = { x: newLeft, y: newTop, width: newW, height: newH, scaleX: newSX, scaleY: newSY };
+      pendingChanges = changes;
+      const now = Date.now();
+      if (now - lastEmit > 50) {
+        lastEmit = now;
+        onUpdate(changes);
+        pendingChanges = null;
+      }
     };
 
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      if (pendingChanges) onUpdate(pendingChanges);
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -242,21 +245,22 @@ function makeDraggable(
         const cy = rect.top + rect.height / 2;
         const startRot = getRotation(el);
         const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
+        let rotLastEmit = 0; let rotPending: Partial<CanvasElement> | null = null;
         const onMove = (ev: MouseEvent) => {
           const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx);
           const delta = (angle - startAngle) * (180 / Math.PI);
           const newDeg = startRot + delta;
           setRotation(el, newDeg);
           applyNodeTransform(el);
-          onUpdate({
-            x: parseFloat(el.style.left),
-            y: parseFloat(el.style.top),
-            rotation: newDeg,
-          });
+          const ch = { x: parseFloat(el.style.left), y: parseFloat(el.style.top), rotation: newDeg };
+          rotPending = ch;
+          const now = Date.now();
+          if (now - rotLastEmit > 50) { rotLastEmit = now; onUpdate(ch); rotPending = null; }
         };
         const onUp = () => {
           document.removeEventListener("mousemove", onMove);
           document.removeEventListener("mouseup", onUp);
+          if (rotPending) onUpdate(rotPending);
           options.onDragEnd?.();
         };
         document.addEventListener("mousemove", onMove);
@@ -274,6 +278,7 @@ function makeDraggable(
       const startLeft = parseFloat(el.style.left) || 0;
       const startTop = parseFloat(el.style.top) || 0;
       let didDrag = false;
+      let dragLastEmit = 0; let dragPending: Partial<CanvasElement> | null = null;
 
       const onMove = (ev: MouseEvent) => {
         const zoom = getZoom();
@@ -287,7 +292,10 @@ function makeDraggable(
 
         el.style.left = startLeft + dx + "px";
         el.style.top = startTop + dy + "px";
-        onUpdate({ x: startLeft + dx, y: startTop + dy });
+        const ch = { x: startLeft + dx, y: startTop + dy };
+        dragPending = ch;
+        const now = Date.now();
+        if (now - dragLastEmit > 50) { dragLastEmit = now; onUpdate(ch); dragPending = null; }
         onGroupDrag(dx, dy, false);
       };
 
@@ -296,6 +304,7 @@ function makeDraggable(
         document.removeEventListener("mouseup", onUp);
 
         if (didDrag) {
+          if (dragPending) { onUpdate(dragPending); dragPending = null; }
           const finalDx = (ev.clientX - startX) / getZoom();
           const finalDy = (ev.clientY - startY) / getZoom();
           onGroupDrag(finalDx, finalDy, true);
