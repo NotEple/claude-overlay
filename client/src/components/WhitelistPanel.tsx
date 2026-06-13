@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { authHeaders } from '../hooks/useAuth';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
 
@@ -22,7 +23,7 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
   const [loading, setLoading] = useState(false);
 
   const fetchList = async () => {
-    const res = await fetch(`${SERVER_URL}/whitelist`, { credentials: 'include' });
+    const res = await fetch(`${SERVER_URL}/whitelist`, { credentials: 'include', headers: authHeaders() });
     if (res.ok) setList(await res.json());
   };
 
@@ -34,7 +35,7 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
     setLoading(true); setStatus(null);
     const res = await fetch(`${SERVER_URL}/whitelist`, {
       method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ username }),
     });
     const data = await res.json();
@@ -44,14 +45,14 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
   };
 
   const handleRemove = async (username: string) => {
-    await fetch(`${SERVER_URL}/whitelist/${username}`, { method: 'DELETE', credentials: 'include' });
+    await fetch(`${SERVER_URL}/whitelist/${username}`, { method: 'DELETE', credentials: 'include', headers: authHeaders() });
     fetchList();
   };
 
   const handleToggleAdmin = async (username: string, isAdmin: boolean) => {
     await fetch(`${SERVER_URL}/whitelist/${username}/admin`, {
       method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ isAdmin: !isAdmin }),
     });
     fetchList();
