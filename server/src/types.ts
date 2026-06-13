@@ -64,6 +64,7 @@ export interface ServerToClientEvents {
   'users:list': (payload: UserPresencePayload[]) => void;
   'session:revoked': () => void;
   'session:role_updated': () => void;
+  'overlay:refresh': () => void;
 }
 
 export interface ClientToServerEvents {
@@ -73,4 +74,5 @@ export interface ClientToServerEvents {
   'audio:trigger': (payload: AudioTriggerPayload) => void;
   'media:control': (payload: MediaControlPayload) => void;
   'cursor:move': (payload: { x: number; y: number }) => void;
+  'overlay:refresh': () => void;
 }

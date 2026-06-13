@@ -25,7 +25,7 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
 
   const {
     elements, connected, cursors, activeUsers,
-    addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl,
+    addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay,
   } = useSocket({ mode: 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl: handleIncomingMediaControl, directUpdateRef });
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -139,7 +139,10 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
             </button>
           )}
           {isAdmin && (
-            <button onClick={() => setShowWhitelist(true)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16, padding: 0 }}>⚙</button>
+            <>
+              <button onClick={refreshOverlay} style={{ background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer', fontSize: 11, padding: '2px 8px', borderRadius: 4 }} title="Refresh OBS overlay">↺ Overlay</button>
+              <button onClick={() => setShowWhitelist(true)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16, padding: 0 }}>⚙</button>
+            </>
           )}
           <button onClick={onLogout} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 11 }}>Logout</button>
         </div>

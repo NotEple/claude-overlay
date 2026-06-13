@@ -15,10 +15,11 @@ interface UseSocketOptions {
   onSessionRevoked?: () => void;
   onRoleUpdated?: () => void;
   onMediaControl?: (payload: MediaControlPayload) => void;
+  onOverlayRefresh?: () => void;
   directUpdateRef?: React.MutableRefObject<((id: string, changes: Partial<CanvasElement>) => void) | null>;
 }
 
-export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl, directUpdateRef }: UseSocketOptions = {}) {
+export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl, onOverlayRefresh, directUpdateRef }: UseSocketOptions = {}) {
   const socketRef = useRef<AppSocket | null>(null);
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [connected, setConnected] = useState(false);
@@ -74,6 +75,12 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     });
     socket.on('session:revoked', () => { socket.disconnect(); onSessionRevoked?.(); });
     socket.on('session:role_updated', () => onRoleUpdatedRef.current?.());
+    socket.on('overlay:refresh', () => {
+      if (onOverlayRefresh) { onOverlayRefresh(); return; }
+      const url = new URL(window.location.href);
+      url.searchParams.set('v', String(Date.now()));
+      window.location.replace(url.toString());
+    });
 
     // rAF loop — flush pending element and cursor updates once per frame
     const flushLoop = () => {
@@ -125,6 +132,7 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   const triggerAudio = (id: string, src: string) => socketRef.current?.emit('audio:trigger', { id, src });
   const sendCursor = useCallback((x: number, y: number) => socketRef.current?.volatile.emit('cursor:move', { x, y }), []);
   const emitMediaControl = useCallback((payload: MediaControlPayload) => socketRef.current?.emit('media:control', payload), []);
+  const refreshOverlay = useCallback(() => socketRef.current?.emit('overlay:refresh'), []);
 
-  return { elements, connected, cursors, activeUsers, addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl };
+  return { elements, connected, cursors, activeUsers, addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay };
 }

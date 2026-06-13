@@ -208,6 +208,10 @@ io.on("connection", (socket) => {
     socket.broadcast.emit("media:control", payload);
   });
 
+  socket.on("overlay:refresh", () => {
+    io.emit("overlay:refresh");
+  });
+
   socket.on("disconnect", () => {
     console.log(`Disconnected: ${user?.login ?? "overlay"} (${socket.id})`);
     if (activeUsers.has(socket.id)) {
