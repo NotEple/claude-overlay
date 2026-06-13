@@ -1484,7 +1484,11 @@ export function CanvasStage({
     if (!onCursorMove) return;
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
+    let lastEmit = 0;
     const onMove = (e: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastEmit < 33) return; // ~30fps
+      lastEmit = now;
       const rect = wrapper.getBoundingClientRect();
       onCursorMove(
         (e.clientX - rect.left - panRef.current.x) / zoomRef.current,

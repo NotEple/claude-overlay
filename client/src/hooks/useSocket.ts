@@ -31,6 +31,7 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
 
   // Pending updates — batched per rAF frame so overlay gets one setState per frame
   const pendingUpdates = useRef<Map<string, Partial<CanvasElement>>>(new Map());
+  const pendingCursors = useRef<Map<string, CursorPayload>>(new Map());
   const rafRef = useRef(0);
 
   useEffect(() => {
@@ -62,7 +63,7 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
 
     socket.on('media:control', (payload) => onMediaControlRef.current?.(payload));
 
-    socket.on('cursor:move', (payload) => setCursors((p) => new Map(p).set(payload.userId, payload)));
+    socket.on('cursor:move', (payload) => { pendingCursors.current.set(payload.userId, payload); });
     socket.on('users:list', (users) => setActiveUsers(users));
     socket.on('user:joined', (user) => setActiveUsers((p) => [...p.filter((u) => u.userId !== user.userId), user]));
     socket.on('user:left', ({ userId }) => {
@@ -72,20 +73,29 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     socket.on('session:revoked', () => { socket.disconnect(); onSessionRevoked?.(); });
     socket.on('session:role_updated', () => onRoleUpdatedRef.current?.());
 
-    // rAF loop — flush pending element updates once per frame
+    // rAF loop — flush pending element and cursor updates once per frame
     const flushLoop = () => {
       rafRef.current = requestAnimationFrame(flushLoop);
-      if (pendingUpdates.current.size === 0) return;
-      const batch = new Map(pendingUpdates.current);
-      pendingUpdates.current.clear();
-      setElements((prev) => prev.map((el) => {
-        const u = batch.get(el.id);
-        if (!u) return el;
-        // null groupId means clear the group
-        const merged = { ...el, ...u };
-        if ('groupId' in u && u.groupId === null) delete merged.groupId;
-        return merged;
-      }));
+      if (pendingUpdates.current.size > 0) {
+        const batch = new Map(pendingUpdates.current);
+        pendingUpdates.current.clear();
+        setElements((prev) => prev.map((el) => {
+          const u = batch.get(el.id);
+          if (!u) return el;
+          const merged = { ...el, ...u };
+          if ('groupId' in u && u.groupId === null) delete merged.groupId;
+          return merged;
+        }));
+      }
+      if (pendingCursors.current.size > 0) {
+        const batch = new Map(pendingCursors.current);
+        pendingCursors.current.clear();
+        setCursors((prev) => {
+          const next = new Map(prev);
+          batch.forEach((v, k) => next.set(k, v));
+          return next;
+        });
+      }
     };
     rafRef.current = requestAnimationFrame(flushLoop);
 
