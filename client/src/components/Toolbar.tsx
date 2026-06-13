@@ -3,6 +3,7 @@ import { randomUUID } from '../utils';
 import { TextDialog, encodeTextSrc } from './TextDialog';
 import type { TextConfig } from './TextDialog';
 import type { CanvasElement, MediaType } from '../types';
+import { authHeaders } from '../hooks/useAuth';
 
 interface ToolbarProps {
   onAdd: (element: CanvasElement) => void;
@@ -27,7 +28,7 @@ export function Toolbar({ onAdd }: ToolbarProps) {
     body.append('file', file);
 
     try {
-      const res = await fetch(`${SERVER_URL}/upload`, { method: 'POST', body, credentials: 'include' });
+      const res = await fetch(`${SERVER_URL}/upload`, { method: 'POST', body, credentials: 'include', headers: authHeaders() });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const { url, mimetype } = await res.json();
 
