@@ -7,18 +7,29 @@ import {
   getTwitchChatColor,
 } from './twitch.js';
 import { isWhitelisted, getWhitelistEntry } from '../db/index.js';
+import { signToken, verifyToken } from './jwt.js';
 
 const OWNER = (process.env.OWNER_TWITCH_USERNAME ?? '').toLowerCase();
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173';
+const SESSION_SECRET = process.env.SESSION_SECRET ?? 'change-me-in-production';
 
 export const authRouter = Router();
 
 const STATE_COOKIE = 'oauth_state';
 const IS_PROD = process.env.NODE_ENV === 'production';
 
+function getUserFromRequest(req: any): any {
+  const auth = req.headers?.authorization as string | undefined;
+  if (auth?.startsWith('Bearer ')) {
+    try { return verifyToken(auth.slice(7), SESSION_SECRET); } catch {}
+  }
+  return req.session?.user ?? null;
+}
+
+export { getUserFromRequest };
+
 authRouter.get('/twitch', (req, res) => {
   const state = randomUUID();
-  // Store state in a direct cookie — avoids session file-store issues across redirects
   res.cookie(STATE_COOKIE, state, {
     httpOnly: true,
     secure: IS_PROD,
@@ -31,7 +42,7 @@ authRouter.get('/twitch', (req, res) => {
 authRouter.get('/callback', async (req, res) => {
   const { code, state, error } = req.query as Record<string, string>;
   const cookieHeader = req.headers.cookie ?? '';
-  const storedState = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith(STATE_COOKIE + '='))?.split('=')[1];
+  const storedState = cookieHeader.split(';').map((c: string) => c.trim()).find((c: string) => c.startsWith(STATE_COOKIE + '='))?.split('=')[1];
   res.clearCookie(STATE_COOKIE);
 
   if (error) { res.redirect(`${CLIENT_URL}/login?error=twitch_denied`); return; }
@@ -48,11 +59,10 @@ authRouter.get('/callback', async (req, res) => {
       res.redirect(`${CLIENT_URL}/login?error=not_whitelisted`); return;
     }
 
-    // Fetch their Twitch chat color
     const color = await getTwitchChatColor(twitchUser.id, accessToken);
-
     const whitelistEntry = login !== OWNER ? getWhitelistEntry(login) : null;
-    req.session.user = {
+
+    const user = {
       id: twitchUser.id,
       login,
       displayName: twitchUser.display_name,
@@ -62,10 +72,8 @@ authRouter.get('/callback', async (req, res) => {
       isAdmin: login === OWNER || (whitelistEntry?.isAdmin ?? false),
     };
 
-    req.session.save((err) => {
-      if (err) console.error('Session save error:', err);
-      res.redirect(`${CLIENT_URL}/`);
-    });
+    const token = signToken(user, SESSION_SECRET);
+    res.redirect(`${CLIENT_URL}/?token=${token}`);
   } catch (err) {
     console.error('OAuth callback error:', err);
     res.redirect(`${CLIENT_URL}/login?error=server_error`);
@@ -73,23 +81,23 @@ authRouter.get('/callback', async (req, res) => {
 });
 
 authRouter.get('/me', (req, res) => {
-  if (!req.session.user) { res.status(401).json({ error: 'Not authenticated' }); return; }
-  res.json(req.session.user);
+  const user = getUserFromRequest(req);
+  if (!user) { res.status(401).json({ error: 'Not authenticated' }); return; }
+  res.json(user);
 });
 
 authRouter.get('/refresh', (req, res) => {
-  if (!req.session.user) { res.status(401).json({ error: 'Not authenticated' }); return; }
-  const { login, isOwner } = req.session.user;
-  if (!isOwner) {
-    const entry = getWhitelistEntry(login);
-    req.session.user.isAdmin = entry?.isAdmin ?? false;
+  const user = getUserFromRequest(req);
+  if (!user) { res.status(401).json({ error: 'Not authenticated' }); return; }
+  // Re-check admin status from whitelist
+  if (!user.isOwner) {
+    const entry = getWhitelistEntry(user.login);
+    user.isAdmin = entry?.isAdmin ?? false;
   }
-  req.session.save(() => res.json(req.session.user));
+  res.json(user);
 });
 
 authRouter.post('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('connect.sid');
-    res.sendStatus(200);
-  });
+  req.session?.destroy(() => {});
+  res.sendStatus(200);
 });

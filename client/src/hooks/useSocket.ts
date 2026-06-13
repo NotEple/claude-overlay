@@ -4,6 +4,7 @@ import type {
   CanvasElement, CursorPayload, UserPresencePayload, MediaControlPayload,
   ServerToClientEvents, ClientToServerEvents,
 } from '../types';
+import { getAuthToken } from './useAuth';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -37,6 +38,7 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
       transports: ['websocket', 'polling'],
       withCredentials: true,
       query: mode === 'overlay' ? { mode: 'overlay' } : {},
+      auth: mode === 'overlay' ? {} : { token: getAuthToken() ?? '' },
     });
     socketRef.current = socket;
 
