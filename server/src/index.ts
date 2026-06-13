@@ -159,12 +159,19 @@ io.on("connection", (socket) => {
     };
     activeUsers.set(socket.id, { ...presence, socketId: socket.id });
 
-    // Tell everyone about the new user, and send the joiner the full list
-    socket.broadcast.emit("user:joined", presence);
-    socket.emit(
-      "users:list",
-      [...activeUsers.values()].map(({ socketId: _, ...u }) => u),
-    );
+    const uniqueUsers = () => {
+      const seen = new Set<string>();
+      return [...activeUsers.values()].filter(({ userId }) => {
+        if (seen.has(userId)) return false;
+        seen.add(userId);
+        return true;
+      }).map(({ socketId: _, ...u }) => u);
+    };
+
+    // Only announce if this is the user's first tab
+    const userTabCount = [...activeUsers.values()].filter((u) => u.userId === user.id).length;
+    if (userTabCount === 1) socket.broadcast.emit("user:joined", presence);
+    socket.emit("users:list", uniqueUsers());
 
     socket.on("cursor:move", ({ x, y }) => {
       socket.broadcast.emit("cursor:move", { ...presence, x, y });
@@ -205,7 +212,9 @@ io.on("connection", (socket) => {
     console.log(`Disconnected: ${user?.login ?? "overlay"} (${socket.id})`);
     if (activeUsers.has(socket.id)) {
       activeUsers.delete(socket.id);
-      io.emit("user:left", { userId: user!.id });
+      // Only emit user:left if they have no other tabs open
+      const stillConnected = [...activeUsers.values()].some((u) => u.userId === user!.id);
+      if (!stillConnected) io.emit("user:left", { userId: user!.id });
     }
   });
 });

@@ -15,7 +15,7 @@ export interface AuthUser {
 const TOKEN_KEY = 'auth_token';
 
 export function getAuthToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function authHeaders(): Record<string, string> {
@@ -32,7 +32,7 @@ export function useAuth() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     if (token) {
-      sessionStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(TOKEN_KEY, token);
       window.history.replaceState({}, '', '/');
     }
 
@@ -49,7 +49,7 @@ export function useAuth() {
   const login = () => { window.location.href = `${SERVER_URL}/auth/twitch`; };
 
   const logout = async () => {
-    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
     await fetch(`${SERVER_URL}/auth/logout`, { method: 'POST', credentials: 'include', headers: authHeaders() });
     setUser(null);
   };
