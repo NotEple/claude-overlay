@@ -198,7 +198,7 @@ function addResizeHandle(
       const changes = { x: newLeft, y: newTop, width: newW, height: newH, scaleX: newSX, scaleY: newSY };
       pendingChanges = changes;
       const now = Date.now();
-      if (now - lastEmit > 50) {
+      if (now - lastEmit > 16) {
         lastEmit = now;
         onUpdate(changes);
         pendingChanges = null;
@@ -255,7 +255,7 @@ function makeDraggable(
           const ch = { x: parseFloat(el.style.left), y: parseFloat(el.style.top), rotation: newDeg };
           rotPending = ch;
           const now = Date.now();
-          if (now - rotLastEmit > 50) { rotLastEmit = now; onUpdate(ch); rotPending = null; }
+          if (now - rotLastEmit > 16) { rotLastEmit = now; onUpdate(ch); rotPending = null; }
         };
         const onUp = () => {
           document.removeEventListener("mousemove", onMove);
@@ -295,7 +295,7 @@ function makeDraggable(
         const ch = { x: startLeft + dx, y: startTop + dy };
         dragPending = ch;
         const now = Date.now();
-        if (now - dragLastEmit > 50) { dragLastEmit = now; onUpdate(ch); dragPending = null; }
+        if (now - dragLastEmit > 16) { dragLastEmit = now; onUpdate(ch); dragPending = null; }
         onGroupDrag(dx, dy, false);
       };
 
