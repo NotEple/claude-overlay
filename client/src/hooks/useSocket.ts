@@ -82,25 +82,24 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
         const batch = new Map(pendingUpdates.current);
         pendingUpdates.current.clear();
         const directUpdate = directUpdateRef?.current;
-        const reactBatch = new Map<string, Partial<CanvasElement>>();
         const GEOMETRY_KEYS = new Set(['x', 'y', 'width', 'height', 'rotation', 'scaleX', 'scaleY']);
-        for (const [id, changes] of batch) {
-          const keys = Object.keys(changes);
-          if (directUpdate && keys.length > 0 && keys.every(k => GEOMETRY_KEYS.has(k))) {
-            directUpdate(id, changes);
-          } else {
-            reactBatch.set(id, changes);
+        // Apply to DOM immediately for smoothness
+        if (directUpdate) {
+          for (const [id, changes] of batch) {
+            const keys = Object.keys(changes);
+            if (keys.length > 0 && keys.every(k => GEOMETRY_KEYS.has(k))) {
+              directUpdate(id, changes);
+            }
           }
         }
-        if (reactBatch.size > 0) {
-          setElements((prev) => prev.map((el) => {
-            const u = reactBatch.get(el.id);
-            if (!u) return el;
-            const merged = { ...el, ...u };
-            if ('groupId' in u && u.groupId === null) delete merged.groupId;
-            return merged;
-          }));
-        }
+        // Always update React state to keep it in sync
+        setElements((prev) => prev.map((el) => {
+          const u = batch.get(el.id);
+          if (!u) return el;
+          const merged = { ...el, ...u };
+          if ('groupId' in u && u.groupId === null) delete merged.groupId;
+          return merged;
+        }));
       }
       if (pendingCursors.current.size > 0) {
         const batch = new Map(pendingCursors.current);

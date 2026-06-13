@@ -1533,6 +1533,8 @@ export function CanvasStage({
           setScale(n, changes.scaleX ?? 1, changes.scaleY ?? 1);
           applyNodeTransform(n);
         }
+        // Mark node so the DOM sync effect skips geometry this frame
+        (n as any).__directUpdatedAt = Date.now();
       };
     }
 
@@ -1671,21 +1673,27 @@ export function CanvasStage({
         nodeMap.set(el.id, node);
       }
 
-      // Update attrs — skip position update if this node is actively being dragged
+      // Update attrs — skip geometry if node is being dragged or was just direct-updated
       const sx = el.scaleX ?? 1,
         sy = el.scaleY ?? 1,
         rot = el.rotation ?? 0;
-      if (!draggingRef.current.has(el.id)) {
+      const recentlyDirect = ((node as any).__directUpdatedAt ?? 0) > Date.now() - 200;
+      if (!draggingRef.current.has(el.id) && !recentlyDirect) {
         node.style.left = el.x + "px";
         node.style.top = el.y + "px";
+        node.style.width = el.width + "px";
+        node.style.height = el.height + "px";
+      } else if (!recentlyDirect) {
+        node.style.width = el.width + "px";
+        node.style.height = el.height + "px";
       }
-      node.style.width = el.width + "px";
-      node.style.height = el.height + "px";
       node.style.opacity = el.visible ? "1" : "0.2";
       node.style.zIndex = String(el.zIndex);
-      setScale(node, sx, sy);
-      setRotation(node, rot);
-      applyNodeTransform(node);
+      if (!recentlyDirect) {
+        setScale(node, sx, sy);
+        setRotation(node, rot);
+        applyNodeTransform(node);
+      }
 
       // Update text content live
       if (el.type === "text") {
