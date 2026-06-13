@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type React from 'react';
 import { io, Socket } from 'socket.io-client';
 import type {
   CanvasElement, CursorPayload, UserPresencePayload, MediaControlPayload,
@@ -14,9 +15,10 @@ interface UseSocketOptions {
   onSessionRevoked?: () => void;
   onRoleUpdated?: () => void;
   onMediaControl?: (payload: MediaControlPayload) => void;
+  directUpdateRef?: React.MutableRefObject<((id: string, changes: Partial<CanvasElement>) => void) | null>;
 }
 
-export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl }: UseSocketOptions = {}) {
+export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl, directUpdateRef }: UseSocketOptions = {}) {
   const socketRef = useRef<AppSocket | null>(null);
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [connected, setConnected] = useState(false);
@@ -79,13 +81,26 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
       if (pendingUpdates.current.size > 0) {
         const batch = new Map(pendingUpdates.current);
         pendingUpdates.current.clear();
-        setElements((prev) => prev.map((el) => {
-          const u = batch.get(el.id);
-          if (!u) return el;
-          const merged = { ...el, ...u };
-          if ('groupId' in u && u.groupId === null) delete merged.groupId;
-          return merged;
-        }));
+        const directUpdate = directUpdateRef?.current;
+        const reactBatch = new Map<string, Partial<CanvasElement>>();
+        const GEOMETRY_KEYS = new Set(['x', 'y', 'width', 'height', 'rotation', 'scaleX', 'scaleY']);
+        for (const [id, changes] of batch) {
+          const keys = Object.keys(changes);
+          if (directUpdate && keys.length > 0 && keys.every(k => GEOMETRY_KEYS.has(k))) {
+            directUpdate(id, changes);
+          } else {
+            reactBatch.set(id, changes);
+          }
+        }
+        if (reactBatch.size > 0) {
+          setElements((prev) => prev.map((el) => {
+            const u = reactBatch.get(el.id);
+            if (!u) return el;
+            const merged = { ...el, ...u };
+            if ('groupId' in u && u.groupId === null) delete merged.groupId;
+            return merged;
+          }));
+        }
       }
       if (pendingCursors.current.size > 0) {
         const batch = new Map(pendingCursors.current);

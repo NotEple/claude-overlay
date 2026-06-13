@@ -17,6 +17,7 @@ interface DashboardProps {
 
 export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: DashboardProps) {
   const dashboardControlRef = useRef<((payload: MediaControlPayload) => void) | null>(null);
+  const directUpdateRef = useRef<((id: string, changes: Partial<CanvasElement>) => void) | null>(null);
 
   const handleIncomingMediaControl = useCallback((payload: MediaControlPayload) => {
     dashboardControlRef.current?.(payload);
@@ -25,7 +26,7 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
   const {
     elements, connected, cursors, activeUsers,
     addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl,
-  } = useSocket({ mode: 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl: handleIncomingMediaControl });
+  } = useSocket({ mode: 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl: handleIncomingMediaControl, directUpdateRef });
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showWhitelist, setShowWhitelist] = useState(false);
@@ -170,6 +171,7 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
             onEditText={handleEditText}
             onMediaControl={handleMediaControl}
             mediaControlRef={dashboardControlRef}
+            directUpdateRef={directUpdateRef}
             showTwitchEmbed={showTwitchEmbed}
             twitchChannel={user.login}
             twitchPlayerRef={twitchPlayerRef}

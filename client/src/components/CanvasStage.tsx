@@ -1326,6 +1326,8 @@ export interface CanvasStageProps {
   mediaControlRef?: React.MutableRefObject<
     ((payload: MediaControlPayload) => void) | null
   >;
+  /** Ref populated with a function for direct DOM position updates, bypassing React state */
+  directUpdateRef?: React.MutableRefObject<((id: string, changes: Partial<CanvasElement>) => void) | null>;
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
   twitchPlayerRef?: React.MutableRefObject<any>;
@@ -1343,6 +1345,7 @@ export function CanvasStage({
   onEditText,
   onMediaControl,
   mediaControlRef,
+  directUpdateRef,
   showTwitchEmbed = false,
   twitchChannel = "",
   twitchPlayerRef: externalTwitchPlayerRef,
@@ -1516,6 +1519,22 @@ export function CanvasStage({
     const nodeMap = nodeMapRef.current;
     const mediaElMap = mediaElMapRef.current;
     const presentIds = new Set(elements.map((e) => e.id));
+
+    if (directUpdateRef) {
+      directUpdateRef.current = (id: string, changes: Partial<CanvasElement>) => {
+        const n = nodeMap.get(id);
+        if (!n || draggingRef.current.has(id)) return;
+        if (changes.x != null) n.style.left = changes.x + 'px';
+        if (changes.y != null) n.style.top = changes.y + 'px';
+        if (changes.width != null) n.style.width = changes.width + 'px';
+        if (changes.height != null) n.style.height = changes.height + 'px';
+        if (changes.rotation != null) { setRotation(n, changes.rotation); applyNodeTransform(n); }
+        if (changes.scaleX != null || changes.scaleY != null) {
+          setScale(n, changes.scaleX ?? 1, changes.scaleY ?? 1);
+          applyNodeTransform(n);
+        }
+      };
+    }
 
     // Remove deleted nodes
     for (const [id, node] of nodeMap) {
