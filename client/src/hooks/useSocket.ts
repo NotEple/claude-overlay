@@ -144,7 +144,15 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   }, [mode]);
 
   const addElement = (element: CanvasElement) => socketRef.current?.emit('element:add', { element });
-  const updateElement = useCallback((id: string, changes: Partial<CanvasElement>) => socketRef.current?.emit('element:update', { id, changes }), []);
+  const updateElement = useCallback((id: string, changes: Partial<CanvasElement>) => {
+    setElements((prev) => prev.map((el) => {
+      if (el.id !== id) return el;
+      const merged = { ...el, ...changes };
+      if ('groupId' in changes && changes.groupId === null) delete merged.groupId;
+      return merged;
+    }));
+    socketRef.current?.emit('element:update', { id, changes });
+  }, []);
   const removeElement = (id: string) => socketRef.current?.emit('element:remove', { id });
   const triggerAudio = (id: string, src: string) => socketRef.current?.emit('audio:trigger', { id, src });
   const sendCursor = useCallback((x: number, y: number) => socketRef.current?.volatile.emit('cursor:move', { x, y }), []);
