@@ -16,7 +16,7 @@ function floodFill(
   startX: number,
   startY: number,
   fillColor: [number, number, number, number],
-  tolerance = 32,
+  tolerance = 64,
 ) {
   const canvas = ctx.canvas;
   startX = Math.round(startX);

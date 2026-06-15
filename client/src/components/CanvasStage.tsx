@@ -1875,10 +1875,9 @@ export function CanvasStage({
           transformOrigin: "0 0",
           width: WORKSPACE_W,
           height: WORKSPACE_H,
-          background: "#1c1c2e",
+          background: "#111",
         }}
       >
-        {/* Twitch embed inside workspace — transform (zoom/pan) applies automatically; sits below viewport-rect via z-index */}
         {showTwitchEmbed && twitchChannel && (
           <iframe
             key={twitchChannel}
@@ -1891,7 +1890,6 @@ export function CanvasStage({
               width: STREAM_W,
               height: STREAM_H,
               border: "none",
-              pointerEvents: "none",
               zIndex: 0,
             }}
           />
@@ -1921,7 +1919,7 @@ export function CanvasStage({
             top: STREAM_OFFSET_Y,
             width: STREAM_W,
             height: STREAM_H,
-            background: "transparent",
+            background: "#1a1a2e",
             outline: "2px solid #6366f1",
             boxSizing: "border-box",
             pointerEvents: "none",
