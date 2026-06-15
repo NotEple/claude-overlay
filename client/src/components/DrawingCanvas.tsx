@@ -68,6 +68,28 @@ function floodFill(
     if (y < h - 1) stack.push(pos + w);
   }
 
+  // 1-pixel dilation: expand fill into adjacent stroke-edge pixels (anti-aliased
+  // pixels that aren't background and weren't reached by the BFS).
+  for (let pos = 0; pos < w * h; pos++) {
+    if (!visited[pos]) continue;
+    const x = pos % w, y = (pos / w) | 0;
+    const neighbors = [
+      x > 0 ? pos - 1 : -1,
+      x < w - 1 ? pos + 1 : -1,
+      y > 0 ? pos - w : -1,
+      y < h - 1 ? pos + w : -1,
+    ];
+    for (const n of neighbors) {
+      if (n < 0 || visited[n]) continue;
+      const i4 = n * 4;
+      if (matches(i4)) continue; // skip open background pixels
+      data[i4] = fillColor[0];
+      data[i4 + 1] = fillColor[1];
+      data[i4 + 2] = fillColor[2];
+      data[i4 + 3] = fillColor[3];
+    }
+  }
+
   ctx.putImageData(imageData, 0, 0);
 }
 
