@@ -1358,6 +1358,7 @@ export interface CanvasStageProps {
   >;
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
+  twitchPlayerRef?: React.MutableRefObject<any>;
   drawingLayer?: React.ReactNode;
 }
 
@@ -1376,6 +1377,7 @@ export function CanvasStage({
   directUpdateRef,
   showTwitchEmbed = false,
   twitchChannel = "",
+  twitchPlayerRef: externalTwitchPlayerRef,
   drawingLayer,
 }: CanvasStageProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);

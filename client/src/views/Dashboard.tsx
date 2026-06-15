@@ -38,6 +38,15 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
   const [toolMode, setToolMode] = useState<DrawToolMode>('pen');
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [showTwitchEmbed, setShowTwitchEmbed] = useState(true);
+  const [twitchPaused, setTwitchPaused] = useState(false);
+  const twitchPlayerRef = useRef<any>(null);
+
+  const handleTwitchPlayPause = useCallback(() => {
+    const player = twitchPlayerRef.current;
+    if (!player) return;
+    if (twitchPaused) { player.play(); setTwitchPaused(false); }
+    else { player.pause(); setTwitchPaused(true); }
+  }, [twitchPaused]);
 
   const handleSelect = useCallback((id: string | null, multi = false) => {
     if (!id) { setSelectedIds(new Set()); return; }
@@ -219,6 +228,7 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
             directUpdateRef={directUpdateRef}
             showTwitchEmbed={showTwitchEmbed}
             twitchChannel={user.login}
+            twitchPlayerRef={twitchPlayerRef}
             drawingLayer={
               <DrawingCanvas
                 width={WORKSPACE_W}
