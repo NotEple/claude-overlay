@@ -197,7 +197,14 @@ function addResizeHandle(
       container.style.top = newTop + "px";
       setScale(container, newSX, newSY);
       applyNodeTransform(container);
-      const changes = { x: newLeft, y: newTop, width: newW, height: newH, scaleX: newSX, scaleY: newSY };
+      const changes = {
+        x: newLeft,
+        y: newTop,
+        width: newW,
+        height: newH,
+        scaleX: newSX,
+        scaleY: newSY,
+      };
       pendingChanges = changes;
       const now = Date.now();
       if (now - lastEmit > 16) {
@@ -247,17 +254,26 @@ function makeDraggable(
         const cy = rect.top + rect.height / 2;
         const startRot = getRotation(el);
         const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
-        let rotLastEmit = 0; let rotPending: Partial<CanvasElement> | null = null;
+        let rotLastEmit = 0;
+        let rotPending: Partial<CanvasElement> | null = null;
         const onMove = (ev: MouseEvent) => {
           const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx);
           const delta = (angle - startAngle) * (180 / Math.PI);
           const newDeg = startRot + delta;
           setRotation(el, newDeg);
           applyNodeTransform(el);
-          const ch = { x: parseFloat(el.style.left), y: parseFloat(el.style.top), rotation: newDeg };
+          const ch = {
+            x: parseFloat(el.style.left),
+            y: parseFloat(el.style.top),
+            rotation: newDeg,
+          };
           rotPending = ch;
           const now = Date.now();
-          if (now - rotLastEmit > 16) { rotLastEmit = now; onUpdate(ch); rotPending = null; }
+          if (now - rotLastEmit > 16) {
+            rotLastEmit = now;
+            onUpdate(ch);
+            rotPending = null;
+          }
         };
         const onUp = () => {
           document.removeEventListener("mousemove", onMove);
@@ -280,7 +296,8 @@ function makeDraggable(
       const startLeft = parseFloat(el.style.left) || 0;
       const startTop = parseFloat(el.style.top) || 0;
       let didDrag = false;
-      let dragLastEmit = 0; let dragPending: Partial<CanvasElement> | null = null;
+      let dragLastEmit = 0;
+      let dragPending: Partial<CanvasElement> | null = null;
 
       const onMove = (ev: MouseEvent) => {
         const zoom = getZoom();
@@ -297,7 +314,11 @@ function makeDraggable(
         const ch = { x: startLeft + dx, y: startTop + dy };
         dragPending = ch;
         const now = Date.now();
-        if (now - dragLastEmit > 16) { dragLastEmit = now; onUpdate(ch); dragPending = null; }
+        if (now - dragLastEmit > 16) {
+          dragLastEmit = now;
+          onUpdate(ch);
+          dragPending = null;
+        }
         onGroupDrag(dx, dy, false);
       };
 
@@ -306,7 +327,10 @@ function makeDraggable(
         document.removeEventListener("mouseup", onUp);
 
         if (didDrag) {
-          if (dragPending) { onUpdate(dragPending); dragPending = null; }
+          if (dragPending) {
+            onUpdate(dragPending);
+            dragPending = null;
+          }
           const finalDx = (ev.clientX - startX) / getZoom();
           const finalDy = (ev.clientY - startY) / getZoom();
           onGroupDrag(finalDx, finalDy, true);
@@ -1329,7 +1353,9 @@ export interface CanvasStageProps {
     ((payload: MediaControlPayload) => void) | null
   >;
   /** Ref populated with a function for direct DOM position updates, bypassing React state */
-  directUpdateRef?: React.MutableRefObject<((id: string, changes: Partial<CanvasElement>) => void) | null>;
+  directUpdateRef?: React.MutableRefObject<
+    ((id: string, changes: Partial<CanvasElement>) => void) | null
+  >;
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
   drawingLayer?: React.ReactNode;
@@ -1520,14 +1546,20 @@ export function CanvasStage({
     const presentIds = new Set(elements.map((e) => e.id));
 
     if (directUpdateRef) {
-      directUpdateRef.current = (id: string, changes: Partial<CanvasElement>) => {
+      directUpdateRef.current = (
+        id: string,
+        changes: Partial<CanvasElement>,
+      ) => {
         const n = nodeMap.get(id);
         if (!n || draggingRef.current.has(id)) return;
-        if (changes.x != null) n.style.left = changes.x + 'px';
-        if (changes.y != null) n.style.top = changes.y + 'px';
-        if (changes.width != null) n.style.width = changes.width + 'px';
-        if (changes.height != null) n.style.height = changes.height + 'px';
-        if (changes.rotation != null) { setRotation(n, changes.rotation); applyNodeTransform(n); }
+        if (changes.x != null) n.style.left = changes.x + "px";
+        if (changes.y != null) n.style.top = changes.y + "px";
+        if (changes.width != null) n.style.width = changes.width + "px";
+        if (changes.height != null) n.style.height = changes.height + "px";
+        if (changes.rotation != null) {
+          setRotation(n, changes.rotation);
+          applyNodeTransform(n);
+        }
         if (changes.scaleX != null || changes.scaleY != null) {
           setScale(n, changes.scaleX ?? 1, changes.scaleY ?? 1);
           applyNodeTransform(n);
@@ -1676,7 +1708,8 @@ export function CanvasStage({
       const sx = el.scaleX ?? 1,
         sy = el.scaleY ?? 1,
         rot = el.rotation ?? 0;
-      const recentlyDirect = ((node as any).__directUpdatedAt ?? 0) > Date.now() - 200;
+      const recentlyDirect =
+        ((node as any).__directUpdatedAt ?? 0) > Date.now() - 200;
       if (!draggingRef.current.has(el.id) && !recentlyDirect) {
         node.style.left = el.x + "px";
         node.style.top = el.y + "px";
@@ -1821,7 +1854,6 @@ export function CanvasStage({
     applyTransform();
   }, [applyTransform]);
 
-
   return (
     <div
       ref={wrapperRef}
@@ -1835,23 +1867,6 @@ export function CanvasStage({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Twitch embed — raw iframe so autoplay works; pointer-events:none so it never captures input */}
-      {showTwitchEmbed && twitchChannel && (
-        <iframe
-          key={twitchChannel}
-          src={`https://player.twitch.tv/?channel=${twitchChannel}&parent=${window.location.hostname}&autoplay=true&muted=true`}
-          allowFullScreen
-          style={{
-            position: "absolute",
-            left: Math.round(STREAM_OFFSET_X * zoomState + panState.x),
-            top: Math.round(STREAM_OFFSET_Y * zoomState + panState.y),
-            width: Math.round(STREAM_W * zoomState),
-            height: Math.round(STREAM_H * zoomState),
-            border: "none",
-            pointerEvents: "none",
-          }}
-        />
-      )}
       <div
         ref={workspaceRef}
         id="viewport"
@@ -1860,9 +1875,27 @@ export function CanvasStage({
           transformOrigin: "0 0",
           width: WORKSPACE_W,
           height: WORKSPACE_H,
-          background: "transparent",
+          background: "#1c1c2e",
         }}
       >
+        {/* Twitch embed inside workspace — transform (zoom/pan) applies automatically; sits below viewport-rect via z-index */}
+        {showTwitchEmbed && twitchChannel && (
+          <iframe
+            key={twitchChannel}
+            src={`https://player.twitch.tv/?channel=${"bagginstv"}&parent=${window.location.hostname}&autoplay=true&muted=true`}
+            allowFullScreen
+            style={{
+              position: "absolute",
+              left: STREAM_OFFSET_X,
+              top: STREAM_OFFSET_Y,
+              width: STREAM_W,
+              height: STREAM_H,
+              border: "none",
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          />
+        )}
         <div
           className="viewport-rect"
           style={{
@@ -1875,6 +1908,7 @@ export function CanvasStage({
             pointerEvents: "none",
             userSelect: "none",
             whiteSpace: "nowrap",
+            zIndex: 1,
           }}
         >
           1920 × 1080 — stream viewport
@@ -1887,10 +1921,11 @@ export function CanvasStage({
             top: STREAM_OFFSET_Y,
             width: STREAM_W,
             height: STREAM_H,
-            background: showTwitchEmbed ? "transparent" : "#1a1a2e",
+            background: "transparent",
             outline: "2px solid #6366f1",
             boxSizing: "border-box",
             pointerEvents: "none",
+            zIndex: 1,
           }}
         />
         {drawingLayer}
@@ -1956,7 +1991,19 @@ export interface OverlayStageHandle {
 
 export const OverlayStage = forwardRef<
   OverlayStageHandle,
-  { elements: CanvasElement[]; strokes?: DrawStroke[]; liveStrokes?: Map<string, { points: Array<[number, number]>; color: string; size: number; eraser: boolean }> }
+  {
+    elements: CanvasElement[];
+    strokes?: DrawStroke[];
+    liveStrokes?: Map<
+      string,
+      {
+        points: Array<[number, number]>;
+        color: string;
+        size: number;
+        eraser: boolean;
+      }
+    >;
+  }
 >(function OverlayStage({ elements, strokes = [], liveStrokes }, ref) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
@@ -1976,14 +2023,24 @@ export const OverlayStage = forwardRef<
   useEffect(() => {
     const canvas = drawCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const action of strokes) {
       renderAction(ctx, action, STREAM_OFFSET_X, STREAM_OFFSET_Y);
     }
     if (liveStrokes) {
       for (const live of liveStrokes.values()) {
-        renderAction(ctx, { ...live, id: `live-${live.userId}`, points: live.points, eraser: live.eraser } as any, STREAM_OFFSET_X, STREAM_OFFSET_Y);
+        renderAction(
+          ctx,
+          {
+            ...live,
+            id: `live-${live.userId}`,
+            points: live.points,
+            eraser: live.eraser,
+          } as any,
+          STREAM_OFFSET_X,
+          STREAM_OFFSET_Y,
+        );
       }
     }
   }, [strokes, liveStrokes]);
@@ -2089,7 +2146,8 @@ export const OverlayStage = forwardRef<
         );
 
         viewport.appendChild(node);
-        const ox = el.x - STREAM_OFFSET_X, oy = el.y - STREAM_OFFSET_Y;
+        const ox = el.x - STREAM_OFFSET_X,
+          oy = el.y - STREAM_OFFSET_Y;
         nodeMap.set(el.id, node);
         posMap.set(el.id, { x: ox, y: oy, rotation: el.rotation ?? 0 });
         targetMap.set(el.id, { x: ox, y: oy, rotation: el.rotation ?? 0 });
@@ -2122,7 +2180,11 @@ export const OverlayStage = forwardRef<
         }
       }
 
-      targetMap.set(el.id, { x: el.x - STREAM_OFFSET_X, y: el.y - STREAM_OFFSET_Y, rotation: el.rotation ?? 0 });
+      targetMap.set(el.id, {
+        x: el.x - STREAM_OFFSET_X,
+        y: el.y - STREAM_OFFSET_Y,
+        rotation: el.rotation ?? 0,
+      });
 
       if (!animating.has(el.id)) {
         animating.add(el.id);
@@ -2183,7 +2245,12 @@ export const OverlayStage = forwardRef<
         ref={drawCanvasRef}
         width={STREAM_W}
         height={STREAM_H}
-        style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 999 }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 999,
+        }}
       />
       {/* Hidden audio container */}
       <div ref={audioContainerRef} style={{ display: "none" }} />
