@@ -7,10 +7,16 @@
       "isAdmin": true
     },
     {
-      "username": "eple_bot",
-      "added_by": "dankchapbot",
-      "added_at": "2026-06-12T13:06:46.142Z",
-      "isAdmin": false
+      "username": "vicksy",
+      "added_by": "eple7",
+      "added_at": "2026-06-15T19:23:53Z",
+      "isAdmin": "false"
+    },
+    {
+      "username": "lethenar",
+      "added_by": "eple7",
+      "added_at": "2026-06-15T19:23:53Z",
+      "isAdmin": "false"
     }
   ]
 }
