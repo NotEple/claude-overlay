@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
-import { CanvasStage, ElementPanel, SPAWN_X, SPAWN_Y } from '../components/CanvasStage';
+import { CanvasStage, ElementPanel, SPAWN_X, SPAWN_Y, WORKSPACE_W, WORKSPACE_H } from '../components/CanvasStage';
+import { DrawingCanvas, renderStroke } from '../components/DrawingCanvas';
 import { Toolbar } from '../components/Toolbar';
 import { WhitelistPanel } from '../components/WhitelistPanel';
 import { TextDialog, encodeTextSrc, decodeTextSrc } from '../components/TextDialog';
@@ -24,12 +25,16 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
   }, []);
 
   const {
-    elements, connected, cursors, activeUsers,
-    addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay,
+    elements, connected, cursors, activeUsers, strokes, liveStrokes,
+    addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke,
   } = useSocket({ mode: 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl: handleIncomingMediaControl, directUpdateRef });
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showWhitelist, setShowWhitelist] = useState(false);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawColor, setDrawColor] = useState('#ff4444');
+  const [drawSize, setDrawSize] = useState(6);
+  const [drawEraser, setDrawEraser] = useState(false);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [showTwitchEmbed, setShowTwitchEmbed] = useState(true);
   const [twitchPaused, setTwitchPaused] = useState(false);
@@ -100,6 +105,37 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
     updateElement(id, timeUpdate);
   }, [emitMediaControl, updateElement]);
 
+  const handleSaveDrawingAsElement = useCallback(() => {
+    if (strokes.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const stroke of strokes) {
+      for (const [x, y] of stroke.points) {
+        if (x < minX) minX = x; if (y < minY) minY = y;
+        if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+      }
+    }
+    const maxPad = Math.max(...strokes.map(s => s.size / 2));
+    minX -= maxPad; minY -= maxPad; maxX += maxPad; maxY += maxPad;
+    const w = Math.ceil(maxX - minX);
+    const h = Math.ceil(maxY - minY);
+    if (w <= 0 || h <= 0) return;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = w;
+    offscreen.height = h;
+    const ctx = offscreen.getContext('2d')!;
+    for (const stroke of strokes) {
+      renderStroke(ctx, stroke, minX, minY);
+    }
+    const dataUrl = offscreen.toDataURL('image/png');
+    addElement({
+      id: randomUUID(), type: 'image', src: dataUrl,
+      x: minX, y: minY, width: w, height: h,
+      rotation: 0, scaleX: 1, scaleY: 1,
+      visible: true, zIndex: Date.now(),
+    });
+    clearStrokes();
+  }, [strokes, addElement, clearStrokes]);
+
   const isAdmin = user.isOwner || user.isAdmin;
 
   const editingTextEl = editingTextId ? elements.find((e) => e.id === editingTextId) : null;
@@ -148,7 +184,20 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
         </div>
       </div>
 
-      <Toolbar onAdd={handleAdd} />
+      <Toolbar
+        onAdd={handleAdd}
+        drawMode={drawMode}
+        onDrawModeToggle={() => setDrawMode((v) => !v)}
+        drawColor={drawColor}
+        onDrawColorChange={setDrawColor}
+        drawSize={drawSize}
+        onDrawSizeChange={setDrawSize}
+        drawEraser={drawEraser}
+        onDrawEraserToggle={() => setDrawEraser((v) => !v)}
+        onDrawClear={clearStrokes}
+        onSaveDrawingAsElement={handleSaveDrawingAsElement}
+        hasStrokes={strokes.length > 0}
+      />
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <ElementPanel
@@ -178,6 +227,20 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
             showTwitchEmbed={showTwitchEmbed}
             twitchChannel={user.login}
             twitchPlayerRef={twitchPlayerRef}
+            drawingLayer={
+              <DrawingCanvas
+                width={WORKSPACE_W}
+                height={WORKSPACE_H}
+                strokes={strokes}
+                liveStrokes={liveStrokes}
+                drawMode={drawMode}
+                color={drawColor}
+                size={drawSize}
+                eraser={drawEraser}
+                onStroke={addStroke}
+                onLiveStroke={sendLiveStroke}
+              />
+            }
           />
         </div>
       </div>

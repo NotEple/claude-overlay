@@ -14,6 +14,8 @@ import { verifyToken } from "./auth/jwt.js";
 import type {
   CanvasState,
   CanvasElement,
+  DrawStroke,
+  LiveDrawStroke,
   ServerToClientEvents,
   ClientToServerEvents,
   UserPresencePayload,
@@ -63,6 +65,7 @@ io.engine.use(sessionMiddleware);
 // In-memory state
 // ---------------------------------------------------------------------------
 const canvasState: CanvasState = { elements: [] };
+const drawStrokes: DrawStroke[] = [];
 
 // Active dashboard users: socketId → presence info
 const activeUsers = new Map<
@@ -147,6 +150,7 @@ io.on("connection", (socket) => {
 
   // Send full canvas state on connect
   socket.emit("state:sync", canvasState);
+  socket.emit("draw:sync", drawStrokes);
 
   if (!isOverlay && user) {
     // Register presence
@@ -210,6 +214,22 @@ io.on("connection", (socket) => {
 
   socket.on("overlay:refresh", () => {
     io.emit("overlay:refresh");
+  });
+
+  socket.on("draw:stroke", (stroke) => {
+    drawStrokes.push(stroke);
+    socket.broadcast.emit("draw:stroke", stroke);
+  });
+
+  socket.on("draw:clear", () => {
+    drawStrokes.length = 0;
+    socket.broadcast.emit("draw:clear");
+  });
+
+  socket.on("draw:live", (data) => {
+    const userId = user?.id ?? socket.id;
+    // Volatile — not stored, dropped under load, perfect for live preview
+    socket.volatile.broadcast.emit("draw:live", { ...data, userId } as LiveDrawStroke);
   });
 
   socket.on("disconnect", () => {

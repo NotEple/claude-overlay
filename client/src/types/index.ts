@@ -48,6 +48,22 @@ export interface UserPresencePayload {
   color: string;
 }
 
+export interface DrawStroke {
+  id: string;
+  points: Array<[number, number]>;
+  color: string;
+  size: number;
+  eraser: boolean;
+}
+
+export interface LiveDrawStroke {
+  userId: string;
+  points: Array<[number, number]>;
+  color: string;
+  size: number;
+  eraser: boolean;
+}
+
 export interface ServerToClientEvents {
   'state:sync': (state: CanvasState) => void;
   'element:added': (payload: ElementAddedPayload) => void;
@@ -62,6 +78,10 @@ export interface ServerToClientEvents {
   'session:revoked': () => void;
   'session:role_updated': () => void;
   'overlay:refresh': () => void;
+  'draw:stroke': (stroke: DrawStroke) => void;
+  'draw:clear': () => void;
+  'draw:sync': (strokes: DrawStroke[]) => void;
+  'draw:live': (stroke: LiveDrawStroke) => void;
 }
 
 export interface ClientToServerEvents {
@@ -72,4 +92,7 @@ export interface ClientToServerEvents {
   'media:control': (payload: MediaControlPayload) => void;
   'cursor:move': (payload: { x: number; y: number }) => void;
   'overlay:refresh': () => void;
+  'draw:stroke': (stroke: DrawStroke) => void;
+  'draw:clear': () => void;
+  'draw:live': (stroke: Omit<LiveDrawStroke, 'userId'>) => void;
 }

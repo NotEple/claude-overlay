@@ -25,14 +25,16 @@ import {
 import type {
   CanvasElement,
   CursorPayload,
+  DrawStroke,
   MediaControlPayload,
 } from "../types";
+import { renderStroke } from "./DrawingCanvas";
 import { randomUUID } from "../utils";
 
 export const STREAM_W = 1920;
 export const STREAM_H = 1080;
-const WORKSPACE_W = 4000;
-const WORKSPACE_H = 3000;
+export const WORKSPACE_W = 4000;
+export const WORKSPACE_H = 3000;
 // Stream rect offset so it sits centered in the workspace
 export const STREAM_OFFSET_X = Math.round((WORKSPACE_W - STREAM_W) / 2); // 1040
 export const STREAM_OFFSET_Y = Math.round((WORKSPACE_H - STREAM_H) / 2); // 960
@@ -1331,6 +1333,7 @@ export interface CanvasStageProps {
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
   twitchPlayerRef?: React.MutableRefObject<any>;
+  drawingLayer?: React.ReactNode;
 }
 
 export function CanvasStage({
@@ -1349,6 +1352,7 @@ export function CanvasStage({
   showTwitchEmbed = false,
   twitchChannel = "",
   twitchPlayerRef: externalTwitchPlayerRef,
+  drawingLayer,
 }: CanvasStageProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -1924,6 +1928,7 @@ export function CanvasStage({
             pointerEvents: "none",
           }}
         />
+        {drawingLayer}
       </div>
       <LiveCursors cursors={cursors} pan={panState} zoom={zoomState} />
       <div
@@ -1986,8 +1991,8 @@ export interface OverlayStageHandle {
 
 export const OverlayStage = forwardRef<
   OverlayStageHandle,
-  { elements: CanvasElement[] }
->(function OverlayStage({ elements }, ref) {
+  { elements: CanvasElement[]; strokes?: DrawStroke[]; liveStrokes?: Map<string, { points: Array<[number, number]>; color: string; size: number; eraser: boolean }> }
+>(function OverlayStage({ elements, strokes = [], liveStrokes }, ref) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const posMapRef = useRef<
@@ -2001,6 +2006,22 @@ export const OverlayStage = forwardRef<
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
   // Container for hidden audio elements
   const audioContainerRef = useRef<HTMLDivElement>(null);
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const stroke of strokes) {
+      renderStroke(ctx, stroke, STREAM_OFFSET_X, STREAM_OFFSET_Y);
+    }
+    if (liveStrokes) {
+      for (const live of liveStrokes.values()) {
+        renderStroke(ctx, live, STREAM_OFFSET_X, STREAM_OFFSET_Y);
+      }
+    }
+  }, [strokes, liveStrokes]);
 
   useImperativeHandle(ref, () => ({
     applyControl(payload: MediaControlPayload) {
@@ -2192,6 +2213,12 @@ export const OverlayStage = forwardRef<
       <div
         ref={viewportRef}
         style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+      />
+      <canvas
+        ref={drawCanvasRef}
+        width={STREAM_W}
+        height={STREAM_H}
+        style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 999 }}
       />
       {/* Hidden audio container */}
       <div ref={audioContainerRef} style={{ display: "none" }} />

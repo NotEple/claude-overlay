@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type React from 'react';
 import { io, Socket } from 'socket.io-client';
 import type {
-  CanvasElement, CursorPayload, UserPresencePayload, MediaControlPayload,
+  CanvasElement, CursorPayload, UserPresencePayload, MediaControlPayload, DrawStroke, LiveDrawStroke,
   ServerToClientEvents, ClientToServerEvents,
 } from '../types';
 import { getAuthToken } from './useAuth';
@@ -25,6 +25,8 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   const [connected, setConnected] = useState(false);
   const [cursors, setCursors] = useState<Map<string, CursorPayload>>(new Map());
   const [activeUsers, setActiveUsers] = useState<UserPresencePayload[]>([]);
+  const [strokes, setStrokes] = useState<DrawStroke[]>([]);
+  const [liveStrokes, setLiveStrokes] = useState<Map<string, LiveDrawStroke>>(new Map());
 
   // Use refs for callbacks so the socket listener closure always has the latest version
   const onRoleUpdatedRef = useRef(onRoleUpdated);
@@ -82,6 +84,21 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
       window.location.replace(url.toString());
     });
 
+    socket.on('draw:sync', (s) => setStrokes(s));
+    socket.on('draw:stroke', (stroke) => setStrokes((prev) => [...prev, stroke]));
+    socket.on('draw:clear', () => { setStrokes([]); setLiveStrokes(new Map()); });
+    socket.on('draw:live', (live) => {
+      setLiveStrokes((prev) => {
+        const next = new Map(prev);
+        if (live.points.length === 0) {
+          next.delete(live.userId);
+        } else {
+          next.set(live.userId, live);
+        }
+        return next;
+      });
+    });
+
     // rAF loop — flush pending element and cursor updates once per frame
     const flushLoop = () => {
       rafRef.current = requestAnimationFrame(flushLoop);
@@ -133,6 +150,20 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   const sendCursor = useCallback((x: number, y: number) => socketRef.current?.volatile.emit('cursor:move', { x, y }), []);
   const emitMediaControl = useCallback((payload: MediaControlPayload) => socketRef.current?.emit('media:control', payload), []);
   const refreshOverlay = useCallback(() => socketRef.current?.emit('overlay:refresh'), []);
+  const addStroke = useCallback((stroke: DrawStroke) => {
+    setStrokes((prev) => [...prev, stroke]);
+    socketRef.current?.emit('draw:stroke', stroke);
+    // Clear own live stroke now that it's committed
+    socketRef.current?.volatile.emit('draw:live', { points: [], color: '', size: 0, eraser: false });
+  }, []);
+  const clearStrokes = useCallback(() => {
+    setStrokes([]);
+    setLiveStrokes(new Map());
+    socketRef.current?.emit('draw:clear');
+  }, []);
+  const sendLiveStroke = useCallback((data: Omit<LiveDrawStroke, 'userId'>) => {
+    socketRef.current?.volatile.emit('draw:live', data);
+  }, []);
 
-  return { elements, connected, cursors, activeUsers, addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay };
+  return { elements, connected, cursors, activeUsers, strokes, liveStrokes, addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
 }
