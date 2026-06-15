@@ -1881,7 +1881,8 @@ export function CanvasStage({
         {showTwitchEmbed && twitchChannel && (
           <iframe
             key={twitchChannel}
-            src={`https://player.twitch.tv/?channel=${"bagginstv"}&parent=${window.location.hostname}&autoplay=true&muted=true`}
+            src={`https://player.twitch.tv/?channel=${"forsen"}&parent=${window.location.hostname}&autoplay=true&muted=true`}
+            allow="autoplay; fullscreen"
             allowFullScreen
             style={{
               position: "absolute",
