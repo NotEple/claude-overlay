@@ -158,6 +158,15 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
           >
             {showTwitchEmbed ? 'Hide Stream' : 'Show Stream'}
           </button>
+          {showTwitchEmbed && (
+            <button
+              onClick={handleTwitchPlayPause}
+              style={{ background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}
+              title={twitchPaused ? 'Resume stream' : 'Pause stream'}
+            >
+              {twitchPaused ? '▶' : '⏸'}
+            </button>
+          )}
           {isAdmin && (
             <>
               <button onClick={refreshOverlay} style={{ background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer', fontSize: 11, padding: '2px 8px', borderRadius: 4 }} title="Refresh OBS overlay">↺ Overlay</button>

@@ -500,12 +500,12 @@ function createMediaElement(
 
     const wrap = document.createElement("div");
     wrap.style.cssText =
-      "position:relative;width:100%;height:100%;display:flex;flex-direction:column;box-sizing:border-box;background:#000;";
+      "position:relative;width:100%;height:100%;display:flex;flex-direction:column;box-sizing:border-box;background:transparent;";
 
     // Video area (fills available space)
     const videoArea = document.createElement("div");
     videoArea.style.cssText =
-      "flex:1;position:relative;overflow:hidden;min-height:0;";
+      "flex:1;position:relative;overflow:hidden;min-height:0;background:transparent;";
     videoArea.appendChild(video);
 
     // Full-size transparent overlay — captures all pointer events on the video face,
@@ -1244,7 +1244,7 @@ function useMarquee(
 
     const marquee = document.createElement("div");
     marquee.style.cssText =
-      "position:absolute;border:1.5px dashed #6366f1;background:rgba(99,102,241,0.08);pointer-events:none;display:none;z-index:500;box-sizing:border-box;";
+      "position:absolute;border:1.5px dashed #6366f1;background:rgba(99,102,241,0.08);display:none;z-index:500;box-sizing:border-box;";
     wrapper.appendChild(marquee);
 
     const onDown = (e: MouseEvent) => {
@@ -1383,7 +1383,10 @@ export function CanvasStage({
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
-
+  const twitchEmbedRef = useRef<HTMLDivElement>(null);
+  const twitchDragBlockerRef = useRef<HTMLDivElement>(null);
+  const twitchInitedRef = useRef(false);
+  const twitchPlayerRef = useRef<any>(null);
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
   const [panState, setPanState] = useState({ x: 0, y: 0 });
@@ -1842,6 +1845,67 @@ export function CanvasStage({
     };
   }, [mediaControlRef]);
 
+  // Twitch.Player — init once when shown, destroy on channel change
+  useEffect(() => {
+    const div = twitchEmbedRef.current;
+    if (!div || !twitchChannel) return;
+
+    if (!showTwitchEmbed) {
+      div.style.display = "none";
+      return;
+    }
+
+    div.style.display = "block";
+
+    if (twitchInitedRef.current) return;
+    const Twitch = (window as any).Twitch;
+    if (!Twitch?.Player) return;
+    twitchInitedRef.current = true;
+
+    const player = new Twitch.Player("twitch-player-container", {
+      width: "100%",
+      height: "100%",
+      channel: "vicksy",
+      parent: [window.location.hostname],
+      muted: true,
+      autoplay: true,
+    });
+    twitchPlayerRef.current = player;
+    if (externalTwitchPlayerRef) externalTwitchPlayerRef.current = player;
+  }, [showTwitchEmbed, twitchChannel, externalTwitchPlayerRef]);
+
+  // Block iframe pointer events during drags so mousemove reaches the canvas
+  useEffect(() => {
+    const blocker = twitchDragBlockerRef.current;
+    if (!blocker) return;
+    const enable = () => {
+      blocker.style.pointerEvents = "auto";
+    };
+    const disable = () => {
+      blocker.style.pointerEvents = "none";
+    };
+    document.addEventListener("mousedown", enable);
+    document.addEventListener("mouseup", disable);
+    return () => {
+      document.removeEventListener("mousedown", enable);
+      document.removeEventListener("mouseup", disable);
+    };
+  }, []);
+
+  // Auto-resume when the tab regains visibility (browser pauses background tabs)
+  useEffect(() => {
+    const onVisible = () => {
+      const player = twitchPlayerRef.current;
+      if (player && showTwitchEmbed) {
+        try {
+          player.play();
+        } catch {}
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [showTwitchEmbed]);
+
   const resetView = useCallback(() => {
     const w = wrapperRef.current?.clientWidth ?? 800;
     const h = wrapperRef.current?.clientHeight ?? 600;
@@ -1878,23 +1942,34 @@ export function CanvasStage({
           background: "#111",
         }}
       >
-        {showTwitchEmbed && twitchChannel && (
-          <iframe
-            key={twitchChannel}
-            src={`https://player.twitch.tv/?channel=${"forsen"}&parent=${window.location.hostname}&autoplay=true&muted=true`}
-            allow="autoplay; fullscreen"
-            allowFullScreen
+        {/* Twitch.Player container — inside workspace so zoom/pan applies automatically */}
+        <div
+          ref={twitchEmbedRef}
+          style={{
+            position: "absolute",
+            left: STREAM_OFFSET_X,
+            top: STREAM_OFFSET_Y,
+            width: STREAM_W,
+            height: STREAM_H,
+            display: "none",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            id="twitch-player-container"
+            style={{ width: "100%", height: "100%" }}
+          />
+          {/* Transparent blocker — activated during mousedown to prevent iframe from eating drag events */}
+          <div
+            ref={twitchDragBlockerRef}
             style={{
               position: "absolute",
-              left: STREAM_OFFSET_X,
-              top: STREAM_OFFSET_Y,
-              width: STREAM_W,
-              height: STREAM_H,
-              border: "none",
-              zIndex: 0,
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1,
             }}
           />
-        )}
+        </div>
         <div
           className="viewport-rect"
           style={{
@@ -1904,7 +1979,6 @@ export function CanvasStage({
             fontSize: 10,
             color: "#6366f1",
             fontFamily: "Inter,sans-serif",
-            pointerEvents: "none",
             userSelect: "none",
             whiteSpace: "nowrap",
             zIndex: 1,
@@ -1920,7 +1994,7 @@ export function CanvasStage({
             top: STREAM_OFFSET_Y,
             width: STREAM_W,
             height: STREAM_H,
-            background: "#1a1a2e",
+            background: "transparent",
             outline: "2px solid #6366f1",
             boxSizing: "border-box",
             pointerEvents: "none",
