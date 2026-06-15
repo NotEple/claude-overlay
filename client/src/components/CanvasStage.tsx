@@ -28,7 +28,7 @@ import type {
   DrawStroke,
   MediaControlPayload,
 } from "../types";
-import { renderStroke } from "./DrawingCanvas";
+import { renderAction } from "./DrawingCanvas";
 import { randomUUID } from "../utils";
 
 export const STREAM_W = 1920;
@@ -1332,7 +1332,6 @@ export interface CanvasStageProps {
   directUpdateRef?: React.MutableRefObject<((id: string, changes: Partial<CanvasElement>) => void) | null>;
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
-  twitchPlayerRef?: React.MutableRefObject<any>;
   drawingLayer?: React.ReactNode;
 }
 
@@ -1351,7 +1350,6 @@ export function CanvasStage({
   directUpdateRef,
   showTwitchEmbed = false,
   twitchChannel = "",
-  twitchPlayerRef: externalTwitchPlayerRef,
   drawingLayer,
 }: CanvasStageProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -1359,9 +1357,6 @@ export function CanvasStage({
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
-  const twitchEmbedRef = useRef<HTMLDivElement>(null);
-  const twitchInitedRef = useRef(false);
-  const twitchPlayerRef = useRef<any>(null);
 
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
@@ -1826,39 +1821,6 @@ export function CanvasStage({
     applyTransform();
   }, [applyTransform]);
 
-  // Twitch embed — init once the pan is set (ResizeObserver has fired) and embed is shown
-  useEffect(() => {
-    const div = twitchEmbedRef.current;
-    if (!div || !twitchChannel) return;
-    // panState starts at {x:0,y:0}; wait until ResizeObserver has set a real pan value
-    const panIsSet = panState.x !== 0 || panState.y !== 0;
-    if (showTwitchEmbed) {
-      div.style.display = "block";
-      if (!twitchInitedRef.current && panIsSet) {
-        twitchInitedRef.current = true;
-        const Twitch = (window as any).Twitch;
-        if (!Twitch) return;
-        const embed = new Twitch.Embed(div, {
-          width: "100%",
-          height: "100%",
-          channel: "vicksy",
-          layout: "video",
-          autoplay: true,
-          muted: true,
-          parent: ["localhost", "shared-obs-overlay.onrender.com"],
-        });
-        embed.addEventListener(Twitch.Embed.VIDEO_READY, () => {
-          const player = embed.getPlayer();
-          twitchPlayerRef.current = player;
-          if (externalTwitchPlayerRef) externalTwitchPlayerRef.current = player;
-          player.setMuted(true);
-          player.setVolume(0);
-        });
-      }
-    } else {
-      div.style.display = "none";
-    }
-  }, [showTwitchEmbed, twitchChannel, panState, externalTwitchPlayerRef]);
 
   return (
     <div
@@ -1873,20 +1835,23 @@ export function CanvasStage({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Twitch embed — rendered before workspace so it sits behind canvas elements */}
-      <div
-        ref={twitchEmbedRef}
-        style={{
-          position: "absolute",
-          left: Math.round(STREAM_OFFSET_X * zoomState + panState.x),
-          top: Math.round(STREAM_OFFSET_Y * zoomState + panState.y),
-          width: Math.round(STREAM_W * zoomState),
-          height: Math.round(STREAM_H * zoomState),
-          display: "none",
-          pointerEvents: "none",
-          overflow: "hidden",
-        }}
-      />
+      {/* Twitch embed — raw iframe so autoplay works; pointer-events:none so it never captures input */}
+      {showTwitchEmbed && twitchChannel && (
+        <iframe
+          key={twitchChannel}
+          src={`https://player.twitch.tv/?channel=${twitchChannel}&parent=${window.location.hostname}&autoplay=true&muted=true`}
+          allowFullScreen
+          style={{
+            position: "absolute",
+            left: Math.round(STREAM_OFFSET_X * zoomState + panState.x),
+            top: Math.round(STREAM_OFFSET_Y * zoomState + panState.y),
+            width: Math.round(STREAM_W * zoomState),
+            height: Math.round(STREAM_H * zoomState),
+            border: "none",
+            pointerEvents: "none",
+          }}
+        />
+      )}
       <div
         ref={workspaceRef}
         id="viewport"
@@ -2013,12 +1978,12 @@ export const OverlayStage = forwardRef<
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const stroke of strokes) {
-      renderStroke(ctx, stroke, STREAM_OFFSET_X, STREAM_OFFSET_Y);
+    for (const action of strokes) {
+      renderAction(ctx, action, STREAM_OFFSET_X, STREAM_OFFSET_Y);
     }
     if (liveStrokes) {
       for (const live of liveStrokes.values()) {
-        renderStroke(ctx, live, STREAM_OFFSET_X, STREAM_OFFSET_Y);
+        renderAction(ctx, { ...live, id: `live-${live.userId}`, points: live.points, eraser: live.eraser } as any, STREAM_OFFSET_X, STREAM_OFFSET_Y);
       }
     }
   }, [strokes, liveStrokes]);

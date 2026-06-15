@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react'; // useRef kept for dashboardControlRef, directUpdateRef
 import { CanvasStage, ElementPanel, SPAWN_X, SPAWN_Y, WORKSPACE_W, WORKSPACE_H } from '../components/CanvasStage';
-import { DrawingCanvas, renderStroke } from '../components/DrawingCanvas';
+import { DrawingCanvas, renderAction } from '../components/DrawingCanvas';
+import type { DrawToolMode } from '../components/DrawingCanvas';
 import { Toolbar } from '../components/Toolbar';
 import { WhitelistPanel } from '../components/WhitelistPanel';
 import { TextDialog, encodeTextSrc, decodeTextSrc } from '../components/TextDialog';
@@ -34,18 +35,9 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
   const [drawMode, setDrawMode] = useState(false);
   const [drawColor, setDrawColor] = useState('#ff4444');
   const [drawSize, setDrawSize] = useState(6);
-  const [drawEraser, setDrawEraser] = useState(false);
+  const [toolMode, setToolMode] = useState<DrawToolMode>('pen');
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [showTwitchEmbed, setShowTwitchEmbed] = useState(true);
-  const [twitchPaused, setTwitchPaused] = useState(false);
-  const twitchPlayerRef = useRef<any>(null);
-
-  const handleTwitchPlayPause = useCallback(() => {
-    const player = twitchPlayerRef.current;
-    if (!player) return;
-    if (twitchPaused) { player.play(); setTwitchPaused(false); }
-    else { player.pause(); setTwitchPaused(true); }
-  }, [twitchPaused]);
 
   const handleSelect = useCallback((id: string | null, multi = false) => {
     if (!id) { setSelectedIds(new Set()); return; }
@@ -123,8 +115,8 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
     offscreen.width = w;
     offscreen.height = h;
     const ctx = offscreen.getContext('2d')!;
-    for (const stroke of strokes) {
-      renderStroke(ctx, stroke, minX, minY);
+    for (const action of strokes) {
+      renderAction(ctx, action, minX, minY);
     }
     const dataUrl = offscreen.toDataURL('image/png');
     addElement({
@@ -166,14 +158,6 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
           >
             {showTwitchEmbed ? 'Hide Stream' : 'Show Stream'}
           </button>
-          {showTwitchEmbed && (
-            <button
-              onClick={handleTwitchPlayPause}
-              style={{ background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}
-            >
-              {twitchPaused ? '▶' : '⏸'}
-            </button>
-          )}
           {isAdmin && (
             <>
               <button onClick={refreshOverlay} style={{ background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer', fontSize: 11, padding: '2px 8px', borderRadius: 4 }} title="Refresh OBS overlay">↺ Overlay</button>
@@ -192,8 +176,8 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
         onDrawColorChange={setDrawColor}
         drawSize={drawSize}
         onDrawSizeChange={setDrawSize}
-        drawEraser={drawEraser}
-        onDrawEraserToggle={() => setDrawEraser((v) => !v)}
+        toolMode={toolMode}
+        onToolModeChange={setToolMode}
         onDrawClear={clearStrokes}
         onSaveDrawingAsElement={handleSaveDrawingAsElement}
         hasStrokes={strokes.length > 0}
@@ -226,7 +210,6 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
             directUpdateRef={directUpdateRef}
             showTwitchEmbed={showTwitchEmbed}
             twitchChannel={user.login}
-            twitchPlayerRef={twitchPlayerRef}
             drawingLayer={
               <DrawingCanvas
                 width={WORKSPACE_W}
@@ -234,9 +217,9 @@ export function Dashboard({ user, onLogout, onSessionRevoked, onRoleUpdated }: D
                 strokes={strokes}
                 liveStrokes={liveStrokes}
                 drawMode={drawMode}
+                toolMode={toolMode}
                 color={drawColor}
                 size={drawSize}
-                eraser={drawEraser}
                 onStroke={addStroke}
                 onLiveStroke={sendLiveStroke}
               />

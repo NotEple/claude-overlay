@@ -54,6 +54,8 @@ export interface DrawStroke {
   color: string;
   size: number;
   eraser: boolean;
+  fillX?: number;
+  fillY?: number;
 }
 
 export interface LiveDrawStroke {
