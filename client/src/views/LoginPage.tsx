@@ -8,6 +8,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_state: 'Something went wrong. Please try again.',
   not_whitelisted: "Your Twitch account hasn't been added to this overlay. Ask the owner to add you.",
   server_error: 'A server error occurred. Please try again.',
+  session_revoked: 'Your access was revoked. Ask the owner to re-add you if this is a mistake.',
 };
 
 export function LoginPage({ onLogin, error }: LoginPageProps) {
@@ -47,4 +48,3 @@ function TwitchIcon() {
     </svg>
   );
 }
-// Add session_revoked to error messages (append to existing ERROR_MESSAGES)

@@ -118,7 +118,8 @@ app.post("/upload", requireAuth, upload.single("file"), (req, res) => {
     res.status(400).json({ error: "No file uploaded" });
     return;
   }
-  res.json({ url: `/files/${req.file.filename}`, mimetype: req.file.mimetype });
+  const url = `/files/${req.file.filename}?name=${encodeURIComponent(req.file.originalname)}`;
+  res.json({ url, mimetype: req.file.mimetype });
 });
 
 app.use("/files", express.static("/tmp/obs-uploads"));
@@ -202,10 +203,6 @@ io.on("connection", (socket) => {
   socket.on("element:remove", ({ id }) => {
     canvasState.elements = canvasState.elements.filter((e) => e.id !== id);
     io.emit("element:removed", { id });
-  });
-
-  socket.on("audio:trigger", (payload) => {
-    io.emit("audio:play", payload);
   });
 
   socket.on("media:control", (payload) => {

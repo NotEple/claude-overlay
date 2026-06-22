@@ -178,6 +178,10 @@ export function DrawingCanvas({
   zIndex = 1,
 }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Offscreen canvas holding all *committed* strokes/fills already baked in.
+  // Avoids ever re-running an expensive flood fill on every redraw.
+  const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bakedCountRef = useRef(0);
   const livePointsRef = useRef<Array<[number, number]>>([]);
   const isDrawingRef = useRef(false);
   const colorRef = useRef(color);
@@ -189,14 +193,37 @@ export function DrawingCanvas({
   useEffect(() => { sizeRef.current = size; }, [size]);
   useEffect(() => { toolRef.current = toolMode; }, [toolMode]);
 
+  // Bake newly-committed strokes into the offscreen base layer once.
+  // If strokes shrank (e.g. cleared) or otherwise diverged, rebuild from scratch.
+  useEffect(() => {
+    let base = baseCanvasRef.current;
+    if (!base) {
+      base = document.createElement('canvas');
+      baseCanvasRef.current = base;
+    }
+    if (base.width !== width || base.height !== height) {
+      base.width = width;
+      base.height = height;
+      bakedCountRef.current = 0;
+    }
+    const ctx = base.getContext('2d')!;
+    if (strokes.length < bakedCountRef.current) {
+      ctx.clearRect(0, 0, base.width, base.height);
+      bakedCountRef.current = 0;
+    }
+    for (let i = bakedCountRef.current; i < strokes.length; i++) {
+      renderAction(ctx, strokes[i], offsetX, offsetY);
+    }
+    bakedCountRef.current = strokes.length;
+  }, [strokes, width, height, offsetX, offsetY]);
+
   const redrawAll = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const base = baseCanvasRef.current;
+    if (!canvas || !base) return;
     const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const action of strokes) {
-      renderAction(ctx, action, offsetX, offsetY);
-    }
+    ctx.drawImage(base, 0, 0);
     if (liveStrokes) {
       for (const live of liveStrokes.values()) {
         renderStroke(ctx, live, offsetX, offsetY);
@@ -210,9 +237,9 @@ export function DrawingCanvas({
         eraser: toolRef.current === 'eraser',
       }, offsetX, offsetY);
     }
-  }, [strokes, liveStrokes, offsetX, offsetY]);
+  }, [liveStrokes, offsetX, offsetY]);
 
-  useEffect(() => { redrawAll(); }, [redrawAll]);
+  useEffect(() => { redrawAll(); }, [strokes, redrawAll]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

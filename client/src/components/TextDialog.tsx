@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { parseTextSrc } from './CanvasStage';
 
 export interface TextConfig {
   text: string;
@@ -89,6 +90,5 @@ export function encodeTextSrc(config: TextConfig): string {
 }
 
 export function decodeTextSrc(src: string): TextConfig {
-  const [text = '', color = '#ffffff', fs = '48', fontFamily = 'Inter'] = src.split('|||');
-  return { text, color, fontSize: parseInt(fs, 10), fontFamily };
+  return parseTextSrc(src);
 }

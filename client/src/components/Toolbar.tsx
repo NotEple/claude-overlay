@@ -1,10 +1,12 @@
 import { useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { randomUUID } from "../utils";
 import { TextDialog, encodeTextSrc } from "./TextDialog";
 import type { TextConfig } from "./TextDialog";
 import type { CanvasElement, MediaType } from "../types";
 import { authHeaders } from "../hooks/useAuth";
 import type { DrawToolMode } from "./DrawingCanvas";
+import { Pencil, X, Eraser, PaintBucket, Pin, Trash2 } from "lucide-react";
 
 const PRESET_COLORS = [
   "#ffffff",
@@ -119,7 +121,7 @@ export function Toolbar({
     setShowTextDialog(false);
   };
 
-  const toolBtn = (label: string, mode: DrawToolMode, title: string) => (
+  const toolBtn = (label: ReactNode, mode: DrawToolMode, title: string) => (
     <button
       onClick={() => onToolModeChange(mode)}
       title={title}
@@ -132,6 +134,9 @@ export function Toolbar({
         fontSize: 12,
         cursor: "pointer",
         fontFamily: "Inter, sans-serif",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
       }}
     >
       {label}
@@ -139,7 +144,7 @@ export function Toolbar({
   );
 
   const btn = (
-    label: string,
+    label: ReactNode,
     onClick: () => void,
     active = false,
     title?: string,
@@ -157,6 +162,9 @@ export function Toolbar({
         cursor: "pointer",
         fontFamily: "Inter, sans-serif",
         whiteSpace: "nowrap",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
       }}
     >
       {label}
@@ -231,7 +239,15 @@ export function Toolbar({
         )}
 
         {btn(
-          drawMode ? "✕ Exit Draw" : "✏️ Draw",
+          drawMode ? (
+            <>
+              <X size={14} /> Exit Draw
+            </>
+          ) : (
+            <>
+              <Pencil size={14} /> Draw
+            </>
+          ),
           onDrawModeToggle,
           drawMode,
           "Toggle drawing mode",
@@ -240,9 +256,27 @@ export function Toolbar({
         {drawMode && (
           <>
             {/* Tool buttons */}
-            {toolBtn("✏️ Pen", "pen", "Freehand pen")}
-            {toolBtn("⬜ Erase", "eraser", "Eraser")}
-            {toolBtn("🪣 Fill", "fill", "Flood fill enclosed area")}
+            {toolBtn(
+              <>
+                <Pencil size={14} /> Pen
+              </>,
+              "pen",
+              "Freehand pen",
+            )}
+            {toolBtn(
+              <>
+                <Eraser size={14} /> Erase
+              </>,
+              "eraser",
+              "Eraser",
+            )}
+            {toolBtn(
+              <>
+                <PaintBucket size={14} /> Fill
+              </>,
+              "fill",
+              "Flood fill enclosed area",
+            )}
 
             <div
               style={{
@@ -335,13 +369,22 @@ export function Toolbar({
 
             {hasStrokes &&
               btn(
-                "📌 Add as Element",
+                <>
+                  <Pin size={14} /> Add as Element
+                </>,
                 onSaveDrawingAsElement,
                 false,
                 "Convert drawing to a draggable element",
               )}
             {hasStrokes &&
-              btn("🗑 Clear", onDrawClear, false, "Clear all drawing")}
+              btn(
+                <>
+                  <Trash2 size={14} /> Clear
+                </>,
+                onDrawClear,
+                false,
+                "Clear all drawing",
+              )}
           </>
         )}
 

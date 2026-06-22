@@ -26,7 +26,6 @@ export interface CanvasState {
 export interface ElementAddedPayload { element: CanvasElement; }
 export interface ElementUpdatedPayload { id: string; changes: Partial<CanvasElement>; }
 export interface ElementRemovedPayload { id: string; }
-export interface AudioTriggerPayload { id: string; src: string; }
 export interface MediaControlPayload {
   id: string;
   action: 'play' | 'pause' | 'seek';
@@ -74,7 +73,6 @@ export interface ServerToClientEvents {
   'element:added': (payload: ElementAddedPayload) => void;
   'element:updated': (payload: ElementUpdatedPayload) => void;
   'element:removed': (payload: ElementRemovedPayload) => void;
-  'audio:play': (payload: AudioTriggerPayload) => void;
   'media:control': (payload: MediaControlPayload) => void;
   'cursor:move': (payload: CursorPayload) => void;
   'user:joined': (payload: UserPresencePayload) => void;
@@ -93,7 +91,6 @@ export interface ClientToServerEvents {
   'element:add': (payload: ElementAddedPayload) => void;
   'element:update': (payload: ElementUpdatedPayload) => void;
   'element:remove': (payload: ElementRemovedPayload) => void;
-  'audio:trigger': (payload: AudioTriggerPayload) => void;
   'media:control': (payload: MediaControlPayload) => void;
   'cursor:move': (payload: { x: number; y: number }) => void;
   'overlay:refresh': () => void;

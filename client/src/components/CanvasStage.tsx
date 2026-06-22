@@ -29,6 +29,28 @@ import type {
   MediaControlPayload,
 } from "../types";
 import { renderAction } from "./DrawingCanvas";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  Play,
+  Pause,
+  X,
+  Eye,
+  EyeOff,
+  ChevronUp,
+  ChevronDown,
+  Image as ImageIcon,
+  Images,
+  FileAudio,
+  Film,
+  Type as TypeIcon,
+  Group as GroupIcon,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+/** Renders a Lucide icon to an SVG string for use in imperatively-built DOM nodes. */
+function iconHTML(Icon: LucideIcon, size = 14): string {
+  return renderToStaticMarkup(<Icon size={size} strokeWidth={2} />);
+}
 
 export const STREAM_W = 1920;
 export const STREAM_H = 1080;
@@ -45,6 +67,15 @@ export function parseTextSrc(src: string) {
   const [text = "", color = "#ffffff", fs = "48", fontFamily = "Inter"] =
     src.split("|||");
   return { text, color, fontSize: parseInt(fs, 10), fontFamily };
+}
+
+/** Recovers the original uploaded filename from a media src URL's ?name= param, falling back to the disk filename. */
+export function getFileLabel(src: string): string {
+  try {
+    const queryName = new URL(src).searchParams.get("name");
+    if (queryName) return queryName;
+  } catch {}
+  return src.split("/").pop()?.split("?")[0] ?? "";
 }
 
 function getScale(el: HTMLElement) {
@@ -403,7 +434,7 @@ function makeSeekButtons(
     const b = document.createElement("button");
     b.textContent = label;
     b.style.cssText =
-      "background:#1e293b;border:1px solid #334;color:#94a3b8;font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer;font-family:Inter,sans-serif;";
+      "background:#1e293b;border:1px solid #334;color:#d4d8e0;font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer;font-family:Inter,sans-serif;";
     b.addEventListener("mousedown", (e) => e.stopPropagation());
     b.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -522,19 +553,19 @@ function createMediaElement(
       "display:flex;align-items:center;gap:4px;padding:4px 6px;background:#0f172a;flex-shrink:0;border-top:1px solid #1e293b;";
 
     const playBtn = document.createElement("button");
-    playBtn.textContent = "▶";
+    playBtn.innerHTML = iconHTML(Play);
     playBtn.style.cssText =
-      "background:none;border:none;color:#94a3b8;font-size:13px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;";
+      "background:none;border:none;color:#d4d8e0;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;display:flex;align-items:center;";
     playBtn.addEventListener("mousedown", (e) => e.stopPropagation());
     playBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       video.paused ? video.play() : video.pause();
     });
     video.addEventListener("play", () => {
-      playBtn.textContent = "⏸";
+      playBtn.innerHTML = iconHTML(Pause);
     });
     video.addEventListener("pause", () => {
-      playBtn.textContent = "▶";
+      playBtn.innerHTML = iconHTML(Play);
     });
 
     const timeDisplay = document.createElement("span");
@@ -580,7 +611,7 @@ function createMediaElement(
       const b = document.createElement("button");
       b.textContent = label;
       b.style.cssText =
-        "background:none;border:none;color:#64748b;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;";
+        "background:none;border:none;color:#9aa3b2;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;";
       b.addEventListener("mousedown", (e) => e.stopPropagation());
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -653,36 +684,45 @@ function createMediaElement(
     wrap.style.cssText =
       "width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px;box-sizing:border-box;background:rgba(20,20,30,0.85);border-radius:8px;";
 
-    const name = src.split("/").pop()?.split("?")[0] ?? "Audio";
+    const name = getFileLabel(src) || "Audio";
     const label = document.createElement("span");
-    label.textContent = "🔊 " + name;
     label.style.cssText =
-      "color:#ccc;font-size:11px;font-family:Inter,sans-serif;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      "color:#ccc;font-size:11px;font-family:Inter,sans-serif;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:4px;";
+    const labelIcon = document.createElement("span");
+    labelIcon.innerHTML = iconHTML(FileAudio, 12);
+    labelIcon.style.cssText = "display:flex;flex-shrink:0;";
+    const labelText = document.createElement("span");
+    labelText.textContent = name;
+    labelText.style.cssText = "overflow:hidden;text-overflow:ellipsis;";
+    label.appendChild(labelIcon);
+    label.appendChild(labelText);
 
     // Custom controls row
     const ctrl = document.createElement("div");
     ctrl.style.cssText = "display:flex;align-items:center;gap:4px;width:100%;";
 
     const playBtn = document.createElement("button");
-    playBtn.textContent = "▶";
+    playBtn.innerHTML = iconHTML(Play);
     playBtn.style.cssText =
-      "background:none;border:none;color:#94a3b8;font-size:13px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;";
+      "background:none;border:none;color:#d4d8e0;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;display:flex;align-items:center;";
+    playBtn.addEventListener("mousedown", (e) => e.stopPropagation());
     playBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       audio.paused ? audio.play() : audio.pause();
     });
     audio.addEventListener("play", () => {
-      playBtn.textContent = "⏸";
+      playBtn.innerHTML = iconHTML(Pause);
     });
     audio.addEventListener("pause", () => {
-      playBtn.textContent = "▶";
+      playBtn.innerHTML = iconHTML(Play);
     });
 
     const makeAudioSeekBtn = (label2: string, sec: number) => {
       const b = document.createElement("button");
       b.textContent = label2;
       b.style.cssText =
-        "background:none;border:none;color:#64748b;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;flex-shrink:0;";
+        "background:none;border:none;color:#9aa3b2;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;flex-shrink:0;";
+      b.addEventListener("mousedown", (e) => e.stopPropagation());
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const t = Math.max(
@@ -709,6 +749,7 @@ function createMediaElement(
         onMediaEvent?.("seek", t);
       }
     };
+    audioProgress.addEventListener("mousedown", (e) => e.stopPropagation());
     audioProgress.addEventListener("input", onAudioProgress);
     audioProgress.addEventListener("change", onAudioProgress);
     audio.addEventListener("timeupdate", () => {
@@ -732,6 +773,7 @@ function createMediaElement(
       audio.volume = vol;
       onVolumeChange?.(vol);
     };
+    audioVol.addEventListener("mousedown", (e) => e.stopPropagation());
     audioVol.addEventListener("input", onAudioVol);
     audioVol.addEventListener("change", onAudioVol);
 
@@ -818,16 +860,19 @@ export function ElementPanel({
   onElementChange: (id: string, changes: Partial<CanvasElement>) => void;
 }) {
   const slots = buildSlots(elements);
-  const icon = (t: string) =>
-    t === "image"
-      ? "📷"
-      : t === "gif"
-        ? "🖼️"
-        : t === "audio"
-          ? "🔊"
-          : t === "video"
-            ? "🎬"
-            : "✏️";
+  const icon = (t: string) => {
+    const Icon =
+      t === "image"
+        ? ImageIcon
+        : t === "gif"
+          ? Images
+          : t === "audio"
+            ? FileAudio
+            : t === "video"
+              ? Film
+              : TypeIcon;
+    return <Icon size={12} strokeWidth={2} />;
+  };
   const anyGrouped = [...selectedIds].some(
     (id) => elements.find((e) => e.id === id)?.groupId,
   );
@@ -869,14 +914,13 @@ export function ElementPanel({
         background: "none",
         border: "none",
         cursor: disabled ? "default" : "pointer",
-        fontSize: 9,
         padding: "1px 2px",
-        color: disabled ? "#2a2a2a" : "#555",
+        color: disabled ? "#444" : "#999",
         lineHeight: 1,
         display: "block",
       }}
     >
-      {label === "up" ? "▲" : "▼"}
+      {label === "up" ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
     </button>
   );
 
@@ -892,7 +936,7 @@ export function ElementPanel({
     const label =
       el.type === "text"
         ? parseTextSrc(el.src).text.slice(0, 18) || "Text"
-        : el.type;
+        : getFileLabel(el.src).slice(0, 22) || el.type;
     const isTop = inGroup ? memberIdx === 0 : slotIdx === 0;
     const isBottom = inGroup
       ? memberIdx === groupSize! - 1
@@ -940,6 +984,7 @@ export function ElementPanel({
           )}
         </div>
         <button
+          title="Toggle visibility"
           onClick={(e) => {
             e.stopPropagation();
             onToggleVisible(el.id);
@@ -948,13 +993,13 @@ export function ElementPanel({
             background: "none",
             border: "none",
             cursor: "pointer",
-            fontSize: 11,
             padding: "0 2px",
-            color: el.visible ? "#555" : "#2a2a2a",
+            color: el.visible ? "#999" : "#555",
             flexShrink: 0,
+            display: "flex",
           }}
         >
-          {el.visible ? "👁" : "🚫"}
+          {el.visible ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
         <button
           onClick={(e) => {
@@ -965,13 +1010,13 @@ export function ElementPanel({
             background: "none",
             border: "none",
             cursor: "pointer",
-            fontSize: 9,
             padding: "0 2px",
-            color: "#2a2a2a",
+            color: "#777",
             flexShrink: 0,
+            display: "flex",
           }}
         >
-          ✕
+          <X size={13} />
         </button>
       </div>
     );
@@ -1087,7 +1132,7 @@ export function ElementPanel({
                   borderBottom: "1px solid rgba(99,102,241,0.2)",
                 }}
               >
-                <span style={{ fontSize: 10, color: "#818cf8" }}>⊞</span>
+                <GroupIcon size={12} color="#818cf8" />
                 <span
                   style={{
                     fontSize: 11,
@@ -1128,13 +1173,13 @@ export function ElementPanel({
                     background: "none",
                     border: "none",
                     cursor: "pointer",
-                    fontSize: 11,
                     padding: "0 2px",
-                    color: allVisible ? "#818cf8" : "#2a2a2a",
+                    color: allVisible ? "#818cf8" : "#555",
                     flexShrink: 0,
+                    display: "flex",
                   }}
                 >
-                  {allVisible ? "👁" : "🚫"}
+                  {allVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                 </button>
               </div>
               {/* Member rows */}
@@ -1629,9 +1674,9 @@ export function CanvasStage({
 
         // Delete button
         const deleteBtn = document.createElement("button");
-        deleteBtn.textContent = "✕";
+        deleteBtn.innerHTML = iconHTML(X, 11);
         deleteBtn.style.cssText =
-          "position:absolute;top:-12px;right:-12px;background:#ef4444;color:white;border:none;cursor:pointer;font-size:10px;width:18px;height:18px;z-index:30;border-radius:50%;display:none;line-height:1;padding:0;";
+          "position:absolute;top:-12px;right:-12px;background:#ef4444;color:white;border:none;cursor:pointer;width:18px;height:18px;z-index:30;border-radius:50%;display:none;align-items:center;justify-content:center;padding:0;";
         deleteBtn.className = "delete-btn";
         deleteBtn.onclick = (e) => {
           e.stopPropagation();
@@ -1766,7 +1811,7 @@ export function CanvasStage({
         ? "block"
         : "none";
       node.querySelector<HTMLElement>(".delete-btn")!.style.display = isSelected
-        ? "block"
+        ? "flex"
         : "none";
       for (const h of node.querySelectorAll<HTMLElement>(".rh")) {
         h.style.display = isSelected ? "block" : "none";
@@ -2093,15 +2138,40 @@ export const OverlayStage = forwardRef<
   // Container for hidden audio elements
   const audioContainerRef = useRef<HTMLDivElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Offscreen layer holding committed strokes/fills already baked in, so an
+  // expensive flood fill is never re-run just because a live stroke updated.
+  const drawBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawBakedCountRef = useRef(0);
 
   useEffect(() => {
+    let base = drawBaseCanvasRef.current;
+    if (!base) {
+      base = document.createElement("canvas");
+      drawBaseCanvasRef.current = base;
+    }
     const canvas = drawCanvasRef.current;
+    if (
+      canvas &&
+      (base.width !== canvas.width || base.height !== canvas.height)
+    ) {
+      base.width = canvas.width;
+      base.height = canvas.height;
+      drawBakedCountRef.current = 0;
+    }
+    const baseCtx = base.getContext("2d")!;
+    if (strokes.length < drawBakedCountRef.current) {
+      baseCtx.clearRect(0, 0, base.width, base.height);
+      drawBakedCountRef.current = 0;
+    }
+    for (let i = drawBakedCountRef.current; i < strokes.length; i++) {
+      renderAction(baseCtx, strokes[i], STREAM_OFFSET_X, STREAM_OFFSET_Y);
+    }
+    drawBakedCountRef.current = strokes.length;
+
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const action of strokes) {
-      renderAction(ctx, action, STREAM_OFFSET_X, STREAM_OFFSET_Y);
-    }
+    ctx.drawImage(base, 0, 0);
     if (liveStrokes) {
       for (const live of liveStrokes.values()) {
         renderAction(
@@ -2236,6 +2306,7 @@ export const OverlayStage = forwardRef<
       node.style.width = el.width + "px";
       node.style.height = el.height + "px";
       node.style.visibility = el.visible ? "visible" : "hidden";
+      node.style.zIndex = String(el.zIndex);
 
       // Sync volume whenever element state changes
       if (el.type === "video") {

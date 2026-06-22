@@ -58,7 +58,14 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
       scaleY: el.scaleY < 0 ? -1 : 1,
     });
     socket.on('state:sync', (state) => setElements(state.elements.map(normalizeScale)));
-    socket.on('element:added', ({ element }) => setElements((p) => [...p, normalizeScale(element)]));
+    socket.on('element:added', ({ element }) => setElements((p) => {
+      const normalized = normalizeScale(element);
+      // May already be present from the optimistic local add — replace rather than duplicate.
+      if (p.some((el) => el.id === normalized.id)) {
+        return p.map((el) => (el.id === normalized.id ? normalized : el));
+      }
+      return [...p, normalized];
+    }));
     socket.on('element:removed', ({ id }) => setElements((p) => p.filter((el) => el.id !== id)));
 
     // Batch position updates via rAF
@@ -143,7 +150,10 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     };
   }, [mode]);
 
-  const addElement = (element: CanvasElement) => socketRef.current?.emit('element:add', { element });
+  const addElement = (element: CanvasElement) => {
+    setElements((prev) => [...prev, element]);
+    socketRef.current?.emit('element:add', { element });
+  };
   const updateElement = useCallback((id: string, changes: Partial<CanvasElement>) => {
     setElements((prev) => prev.map((el) => {
       if (el.id !== id) return el;
@@ -154,7 +164,6 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     socketRef.current?.emit('element:update', { id, changes });
   }, []);
   const removeElement = (id: string) => socketRef.current?.emit('element:remove', { id });
-  const triggerAudio = (id: string, src: string) => socketRef.current?.emit('audio:trigger', { id, src });
   const sendCursor = useCallback((x: number, y: number) => socketRef.current?.volatile.emit('cursor:move', { x, y }), []);
   const emitMediaControl = useCallback((payload: MediaControlPayload) => socketRef.current?.emit('media:control', payload), []);
   const refreshOverlay = useCallback(() => socketRef.current?.emit('overlay:refresh'), []);
@@ -173,5 +182,5 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     socketRef.current?.volatile.emit('draw:live', data);
   }, []);
 
-  return { elements, connected, cursors, activeUsers, strokes, liveStrokes, addElement, updateElement, removeElement, triggerAudio, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
+  return { elements, connected, cursors, activeUsers, strokes, liveStrokes, addElement, updateElement, removeElement, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
 }
