@@ -29,7 +29,6 @@ import type {
   MediaControlPayload,
 } from "../types";
 import { renderAction } from "./DrawingCanvas";
-import { randomUUID } from "../utils";
 
 export const STREAM_W = 1920;
 export const STREAM_H = 1080;

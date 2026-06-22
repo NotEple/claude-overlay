@@ -10,13 +10,13 @@
       "username": "vicksy",
       "added_by": "eple7",
       "added_at": "2026-06-15T19:23:53Z",
-      "isAdmin": "false"
+      "isAdmin": false
     },
     {
       "username": "lethenar",
       "added_by": "eple7",
       "added_at": "2026-06-15T19:23:53Z",
-      "isAdmin": "false"
+      "isAdmin": false
     }
   ]
 }
