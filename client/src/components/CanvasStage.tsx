@@ -1197,6 +1197,7 @@ export function ElementPanel({
           );
         })}
       </div>
+      {/* OVER HERE SHOULD BE FINE I THINK */}
     </div>
   );
 }
@@ -1621,9 +1622,14 @@ export function CanvasStage({
     // Remove deleted nodes
     for (const [id, node] of nodeMap) {
       if (!presentIds.has(id)) {
+        const media = mediaElMap.get(id);
+        if (media) {
+          media.pause();
+          if (media.parentNode) media.parentNode.removeChild(media);
+          mediaElMap.delete(id);
+        }
         node.remove();
         nodeMap.delete(id);
-        mediaElMap.delete(id);
       }
     }
 

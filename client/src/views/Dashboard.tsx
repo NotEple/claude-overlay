@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   CanvasStage,
   ElementPanel,
@@ -268,7 +268,7 @@ export function Dashboard({
           alignItems: "center",
           justifyContent: "space-between",
           padding: "0 12px",
-          height: 36,
+          height: 48,
           background: "#111",
           borderBottom: "1px solid #222",
           flexShrink: 0,
@@ -276,13 +276,13 @@ export function Dashboard({
       >
         <span
           style={{
-            fontSize: 12,
+            fontSize: 18,
             fontWeight: 600,
             color: "#818cf8",
             letterSpacing: "0.05em",
           }}
         >
-          OBS Overlay
+          OBS Overlay | Vicksy
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", gap: 3 }}>
@@ -293,8 +293,8 @@ export function Dashboard({
                 alt={u.displayName}
                 title={u.displayName}
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 28,
+                  height: 28,
                   borderRadius: "50%",
                   border: `2px solid ${u.color}`,
                 }}
@@ -302,7 +302,7 @@ export function Dashboard({
             ))}
           </div>
           <span
-            style={{ fontSize: 11, color: connected ? "#4ade80" : "#f87171" }}
+            style={{ fontSize: 14, color: connected ? "#4ade80" : "#f87171" }}
           >
             {connected ? "● Connected" : "○ Disconnected"}
           </span>
@@ -311,30 +311,15 @@ export function Dashboard({
               src={user.avatar}
               alt=""
               style={{
-                width: 20,
-                height: 20,
+                width: 28,
+                height: 28,
                 borderRadius: "50%",
                 border: `2px solid ${user.color ?? "#9146FF"}`,
               }}
             />
-            <span style={{ fontSize: 11, color: "#ccc" }}>
+            <span style={{ fontSize: 14, color: "#ccc" }}>
               {user.displayName}
             </span>
-            {user.isOwner && (
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 600,
-                  color: "#a78bfa",
-                  background: "#1e1b4b",
-                  border: "1px solid #4c1d95",
-                  borderRadius: 3,
-                  padding: "1px 4px",
-                }}
-              >
-                owner
-              </span>
-            )}
             {!user.isOwner && user.isAdmin && (
               <span
                 style={{
@@ -351,59 +336,8 @@ export function Dashboard({
               </span>
             )}
           </div>
-          <button
-            onClick={() => setShowTwitchEmbed((v) => !v)}
-            style={{
-              background: showTwitchEmbed ? "#1e1b4b" : "none",
-              border: showTwitchEmbed ? "1px solid #4c1d95" : "1px solid #333",
-              color: showTwitchEmbed ? "#a78bfa" : "#ccc",
-              cursor: "pointer",
-              fontSize: 11,
-              padding: "2px 8px",
-              borderRadius: 4,
-            }}
-          >
-            {showTwitchEmbed ? "Hide Stream" : "Show Stream"}
-          </button>
-          {showTwitchEmbed && (
-            <button
-              onClick={handleTwitchPlayPause}
-              style={{
-                background: "none",
-                border: "1px solid #444",
-                color: "#ccc",
-                cursor: "pointer",
-                fontSize: 11,
-                padding: "2px 8px",
-                borderRadius: 4,
-                display: "flex",
-                alignItems: "center",
-              }}
-              title={twitchPaused ? "Resume stream" : "Pause stream"}
-            >
-              {twitchPaused ? <Play size={14} /> : <Pause size={14} />}
-            </button>
-          )}
           {isAdmin && (
             <>
-              <button
-                onClick={refreshOverlay}
-                style={{
-                  background: "none",
-                  border: "1px solid #444",
-                  color: "#ccc",
-                  cursor: "pointer",
-                  fontSize: 11,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                }}
-                title="Refresh OBS overlay (Refreshes the overlay on the streamers OBS)"
-              >
-                <RotateCcw size={14} /> Overlay
-              </button>
               <button
                 onClick={() => setShowWhitelist(true)}
                 style={{
@@ -417,18 +351,54 @@ export function Dashboard({
                 }}
                 title="Whitelist settings"
               >
-                <Settings size={17} />
+                <Settings size={30} />
               </button>
             </>
           )}
           <button
-            onClick={onLogout}
+            onClick={() => setShowTwitchEmbed((v) => !v)}
+            style={{
+              background: showTwitchEmbed ? "#1e1b4b" : "none",
+              border: showTwitchEmbed ? "1px solid #4c1d95" : "1px solid #333",
+              color: showTwitchEmbed ? "#a78bfa" : "#ccc",
+              cursor: "pointer",
+              fontSize: 18,
+              padding: "2px 8px",
+              borderRadius: 4,
+            }}
+          >
+            {showTwitchEmbed ? "Hide Stream" : "Show Stream"}
+          </button>
+          <button
+            onClick={refreshOverlay}
             style={{
               background: "none",
-              border: "none",
-              color: "#999",
+              border: "1px solid #444",
+              color: "#ccc",
               cursor: "pointer",
-              fontSize: 11,
+              fontSize: 18,
+              padding: "2px 8px",
+              borderRadius: 4,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+            title="Refresh OBS overlay (Refreshes the overlay on the streamers OBS)"
+          >
+            <RotateCcw size={14} /> Overlay
+          </button>
+          <button
+            onClick={onLogout}
+            style={{
+              background: "#450a0a",
+              border: "1px solid #991b1b",
+              color: "#f87171",
+              cursor: "pointer",
+              fontSize: 18,
+              padding: "2px 8px",
+              borderRadius: 4,
+              display: "flex",
+              alignItems: "center",
             }}
           >
             Logout

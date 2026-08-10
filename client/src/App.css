@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+  }
+}
+
+/* Custom color palette */
+@theme {
+  --color-primary: hsl(38 100% 57%);
+
+  --color-bg-light: hsl(0 0% 10%);
+  --color-bg: hsl(0 0% 5%);
+  --color-bg-dark: hsl(0 0% 0%);
+
+  --color-text: hsl(0 0% 95%);
+  --color-text-muted: hsl(0 0% 75%);
+}
