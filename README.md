@@ -45,7 +45,17 @@ VITE_SERVER_URL=http://localhost:3001
 ```
 PORT=3001
 CLIENT_URL=http://localhost:5173
+SESSION_SECRET=replace-with-a-long-random-secret
+TWITCH_CLIENT_ID=your-twitch-client-id
+TWITCH_CLIENT_SECRET=your-twitch-client-secret
+TWITCH_REDIRECT_URI=http://localhost:3001/auth/callback
+OWNER_TWITCH_USERNAME=vicksy
+DATA_DIR=./data
+UPLOAD_DIR=/tmp/obs-uploads
 ```
+
+`SESSION_SECRET` is required when `NODE_ENV=production`. The owner defaults to
+`vicksy`; the environment variable exists to make local testing easier.
 
 For production, point these at your Render URLs.
 
@@ -58,8 +68,6 @@ Set env vars in each service's Render dashboard.
 
 ## Next steps
 
-- [ ] Swap local `/tmp` file storage for Cloudinary (update `server/src/index.ts` upload route)
-- [ ] Add mod authentication (Clerk or a simple password env var)
+- [ ] Swap local `/tmp` file storage for durable object storage
 - [ ] Persist canvas state to a DB (Drizzle + SQLite or Supabase)
-- [ ] Video element support in `CanvasStage` (Konva doesn't render `<video>` natively — use a DOM overlay)
-- [ ] Z-index controls (bring forward / send back) in the toolbar
+- [ ] Continue splitting the DOM canvas interaction modules as features are added

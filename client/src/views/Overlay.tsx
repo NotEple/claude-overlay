@@ -15,7 +15,7 @@ export function Overlay() {
     stageRef.current?.applyControl(payload);
   }, []);
 
-  const { elements, strokes, liveStrokes } = useSocket({
+  const { elements, cursors, strokes, liveStrokes } = useSocket({
     mode: "overlay",
     onMediaControl: handleMediaControl,
   });
@@ -28,5 +28,5 @@ export function Overlay() {
     return () => clearInterval(id);
   }, []);
 
-  return <OverlayStage ref={stageRef} elements={elements} strokes={strokes} liveStrokes={liveStrokes} />;
+  return <OverlayStage ref={stageRef} elements={elements} cursors={cursors} strokes={strokes} liveStrokes={liveStrokes} />;
 }

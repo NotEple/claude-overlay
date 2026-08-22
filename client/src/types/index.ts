@@ -17,6 +17,13 @@ export interface CanvasElement {
   mediaCurrentTime?: number;
   mediaPaused?: boolean;
   mediaVolume?: number;
+  autoVisibility?: boolean;
+  dvdEnabled?: boolean;
+  dvdStartedAt?: number;
+  dvdStartX?: number;
+  dvdStartY?: number;
+  dvdVelocityX?: number;
+  dvdVelocityY?: number;
 }
 
 export interface CanvasState { elements: CanvasElement[]; }
@@ -78,6 +85,7 @@ export interface ServerToClientEvents {
   'session:revoked': () => void;
   'session:role_updated': () => void;
   'overlay:refresh': () => void;
+  'overlay:status': (payload: { connected: boolean; count: number }) => void;
   'draw:stroke': (stroke: DrawStroke) => void;
   'draw:clear': () => void;
   'draw:sync': (strokes: DrawStroke[]) => void;
@@ -89,7 +97,7 @@ export interface ClientToServerEvents {
   'element:update': (payload: ElementUpdatedPayload) => void;
   'element:remove': (payload: ElementRemovedPayload) => void;
   'media:control': (payload: MediaControlPayload) => void;
-  'cursor:move': (payload: { x: number; y: number }) => void;
+  'cursor:move': (payload: { x: number; y: number; showOnOverlay: boolean }) => void;
   'overlay:refresh': () => void;
   'draw:stroke': (stroke: DrawStroke) => void;
   'draw:clear': () => void;

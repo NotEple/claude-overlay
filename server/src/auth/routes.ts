@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { randomUUID } from "crypto";
 import {
   getTwitchAuthUrl,
@@ -7,26 +7,62 @@ import {
   getTwitchChatColor,
   isStreamerLive,
 } from "./twitch.js";
-import { isWhitelisted, getWhitelistEntry } from "../db/index.js";
+import { getWhitelistEntry } from "../db/index.js";
 import { signToken, verifyToken } from "./jwt.js";
 
-const OWNER = (process.env.OWNER_TWITCH_USERNAME ?? "").toLowerCase();
+const OWNER = (process.env.OWNER_TWITCH_USERNAME ?? "vicksy").toLowerCase();
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
-const SESSION_SECRET = process.env.SESSION_SECRET ?? "change-me-in-production";
+const IS_PROD = process.env.NODE_ENV === "production";
+if (IS_PROD && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET is required in production");
+}
+const SESSION_SECRET = process.env.SESSION_SECRET ?? "development-only-secret";
 
 export const authRouter = Router();
 
 const STATE_COOKIE = "oauth_state";
-const IS_PROD = process.env.NODE_ENV === "production";
+export interface AuthUser {
+  id: string;
+  login: string;
+  displayName: string;
+  avatar: string;
+  color: string;
+  isOwner: boolean;
+  isAdmin: boolean;
+}
 
-function getUserFromRequest(req: any): any {
+function authorizeTokenUser(tokenUser: any): AuthUser | null {
+  if (!tokenUser || typeof tokenUser.login !== "string") return null;
+  const login = tokenUser.login.toLowerCase();
+  const isOwner = login === OWNER;
+  const whitelistEntry = isOwner ? null : getWhitelistEntry(login);
+  if (!isOwner && !whitelistEntry) return null;
+
+  return {
+    id: String(tokenUser.id ?? ""),
+    login,
+    displayName: String(tokenUser.displayName ?? login),
+    avatar: String(tokenUser.avatar ?? ""),
+    color: String(tokenUser.color ?? "#9146FF"),
+    isOwner,
+    isAdmin: isOwner || (whitelistEntry?.isAdmin ?? false),
+  };
+}
+
+export function getUserFromToken(token: string): AuthUser | null {
+  try {
+    return authorizeTokenUser(verifyToken(token, SESSION_SECRET));
+  } catch {
+    return null;
+  }
+}
+
+function getUserFromRequest(req: Request): AuthUser | null {
   const auth = req.headers?.authorization as string | undefined;
   if (auth?.startsWith("Bearer ")) {
-    try {
-      return verifyToken(auth.slice(7), SESSION_SECRET);
-    } catch {}
+    return getUserFromToken(auth.slice(7));
   }
-  return req.session?.user ?? null;
+  return null;
 }
 
 export { getUserFromRequest };
@@ -66,7 +102,7 @@ authRouter.get("/callback", async (req, res) => {
     const twitchUser = await getTwitchUserFromToken(accessToken);
     const login = twitchUser.login.toLowerCase();
 
-    if (login !== OWNER && !isWhitelisted(login)) {
+    if (login !== OWNER && !getWhitelistEntry(login)) {
       res.redirect(`${CLIENT_URL}/login?error=not_whitelisted`);
       return;
     }
@@ -107,16 +143,10 @@ authRouter.get("/refresh", (req, res) => {
     res.status(401).json({ error: "Not authenticated" });
     return;
   }
-  // Re-check admin status from whitelist
-  if (!user.isOwner) {
-    const entry = getWhitelistEntry(user.login);
-    user.isAdmin = entry?.isAdmin ?? false;
-  }
   res.json(user);
 });
 
-authRouter.post("/logout", (req, res) => {
-  req.session?.destroy(() => {});
+authRouter.post("/logout", (_req, res) => {
   res.sendStatus(200);
 });
 

@@ -44,60 +44,48 @@ import {
   Film,
   Type as TypeIcon,
   Group as GroupIcon,
+  Maximize2,
+  Expand,
+  Disc,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import {
+  STREAM_W,
+  STREAM_H,
+  WORKSPACE_W,
+  WORKSPACE_H,
+  STREAM_OFFSET_X,
+  STREAM_OFFSET_Y,
+  SPAWN_X,
+  SPAWN_Y,
+  parseTextSrc,
+  getFileLabel,
+} from "../canvas/config";
+import {
+  getScale,
+  setScale,
+  getRotation,
+  setRotation,
+  applyNodeTransform,
+} from "../canvas/elementTransforms";
+import { createDvdMotion, getDvdPosition } from "../canvas/dvdMotion";
+
+export {
+  STREAM_W,
+  STREAM_H,
+  WORKSPACE_W,
+  WORKSPACE_H,
+  STREAM_OFFSET_X,
+  STREAM_OFFSET_Y,
+  SPAWN_X,
+  SPAWN_Y,
+  parseTextSrc,
+  getFileLabel,
+} from "../canvas/config";
 
 /** Renders a Lucide icon to an SVG string for use in imperatively-built DOM nodes. */
 function iconHTML(Icon: LucideIcon, size = 14): string {
   return renderToStaticMarkup(<Icon size={size} strokeWidth={2} />);
-}
-
-export const STREAM_W = 1920;
-export const STREAM_H = 1080;
-export const WORKSPACE_W = 4000;
-export const WORKSPACE_H = 3000;
-// Stream rect offset so it sits centered in the workspace
-export const STREAM_OFFSET_X = Math.round((WORKSPACE_W - STREAM_W) / 2); // 1040
-export const STREAM_OFFSET_Y = Math.round((WORKSPACE_H - STREAM_H) / 2); // 960
-// Default spawn: just to the left of the stream rect, out of the way
-export const SPAWN_X = STREAM_OFFSET_X - 800;
-export const SPAWN_Y = STREAM_OFFSET_Y + 100;
-
-export function parseTextSrc(src: string) {
-  const [text = "", color = "#ffffff", fs = "48", fontFamily = "Inter"] =
-    src.split("|||");
-  return { text, color, fontSize: parseInt(fs, 10), fontFamily };
-}
-
-/** Recovers the original uploaded filename from a media src URL's ?name= param, falling back to the disk filename. */
-export function getFileLabel(src: string): string {
-  try {
-    const queryName = new URL(src).searchParams.get("name");
-    if (queryName) return queryName;
-  } catch {}
-  return src.split("/").pop()?.split("?")[0] ?? "";
-}
-
-function getScale(el: HTMLElement) {
-  return {
-    x: parseFloat(el.dataset.scaleX ?? "1"),
-    y: parseFloat(el.dataset.scaleY ?? "1"),
-  };
-}
-function setScale(el: HTMLElement, sx: number, sy: number) {
-  el.dataset.scaleX = String(sx);
-  el.dataset.scaleY = String(sy);
-}
-function getRotation(el: HTMLElement) {
-  return parseFloat(el.dataset.rotation ?? "0");
-}
-function setRotation(el: HTMLElement, deg: number) {
-  el.dataset.rotation = String(deg);
-}
-function applyNodeTransform(el: HTMLElement) {
-  const { x, y } = getScale(el);
-  const r = getRotation(el);
-  el.style.transform = `rotate(${r}deg) scaleX(${x}) scaleY(${y})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +124,7 @@ function addResizeHandle(
   btn.className = `rh rh-${pos}`;
   btn.style.cssText = `
     position:absolute;${HANDLE_POSITIONS[pos]};
-    width:10px;height:10px;background:white;border:1.5px solid #6366f1;
+    width:10px;height:10px;background:white;border:1.5px solid var(--accent-border);
     border-radius:2px;cursor:${HANDLE_CURSORS[pos]};z-index:20;display:none;
   `;
 
@@ -266,13 +254,17 @@ function makeDraggable(
   onUpdate: (changes: Partial<CanvasElement>) => void,
   onGroupDrag: (dx: number, dy: number, final: boolean) => void,
   onDblClick: (() => void) | null,
-  options: { onDragStart?: () => void; onDragEnd?: () => void } = {},
+  options: {
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
+    onSnapGuides?: (guideX?: number, guideY?: number) => void;
+  } = {},
 ) {
   el.addEventListener(
     "mousedown",
     (e) => {
       if ((e.target as HTMLElement).classList.contains("rh")) return;
-      if ((e.target as HTMLElement).closest("button, input, audio, .rh"))
+      if ((e.target as HTMLElement).closest("button, input, audio, video, .rh"))
         return;
 
       // Right-click = rotate
@@ -328,6 +320,8 @@ function makeDraggable(
       let didDrag = false;
       let dragLastEmit = 0;
       let dragPending: Partial<CanvasElement> | null = null;
+      let lastDx = 0;
+      let lastDy = 0;
 
       const onMove = (ev: MouseEvent) => {
         const zoom = getZoom();
@@ -339,9 +333,26 @@ function makeDraggable(
         }
         if (!didDrag) return;
 
-        el.style.left = startLeft + dx + "px";
-        el.style.top = startTop + dy + "px";
-        const ch = { x: startLeft + dx, y: startTop + dy };
+        const snapped = ev.altKey
+          ? {
+              x: startLeft + dx,
+              y: startTop + dy,
+              guideX: undefined,
+              guideY: undefined,
+            }
+          : snapToStream(
+              startLeft + dx,
+              startTop + dy,
+              el.offsetWidth,
+              el.offsetHeight,
+              10 / zoom,
+            );
+        lastDx = snapped.x - startLeft;
+        lastDy = snapped.y - startTop;
+        el.style.left = snapped.x + "px";
+        el.style.top = snapped.y + "px";
+        options.onSnapGuides?.(snapped.guideX, snapped.guideY);
+        const ch = { x: snapped.x, y: snapped.y };
         dragPending = ch;
         const now = Date.now();
         if (now - dragLastEmit > 16) {
@@ -349,10 +360,10 @@ function makeDraggable(
           onUpdate(ch);
           dragPending = null;
         }
-        onGroupDrag(dx, dy, false);
+        onGroupDrag(lastDx, lastDy, false);
       };
 
-      const onUp = (ev: MouseEvent) => {
+      const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
 
@@ -361,9 +372,8 @@ function makeDraggable(
             onUpdate(dragPending);
             dragPending = null;
           }
-          const finalDx = (ev.clientX - startX) / getZoom();
-          const finalDy = (ev.clientY - startY) / getZoom();
-          onGroupDrag(finalDx, finalDy, true);
+          onGroupDrag(lastDx, lastDy, true);
+          options.onSnapGuides?.();
           options.onDragEnd?.();
 
           // Prevent video from toggling play/pause on drag release
@@ -410,6 +420,7 @@ function attachMediaListeners(
     action: "play" | "pause" | "seek",
     currentTime: number,
   ) => void,
+  trackNativeSeeking = false,
 ) {
   // Only track play/pause via events. Seek is emitted directly by UI controls to avoid
   // a re-emit loop (seeked fires asynchronously, potentially after __applyingRemote resets).
@@ -421,6 +432,57 @@ function attachMediaListeners(
     if ((media as any).__applyingRemote) return;
     onMediaEvent("pause", media.currentTime);
   });
+  if (trackNativeSeeking) {
+    media.addEventListener("seeked", () => {
+      const remoteTarget = (media as any).__remoteSeekTarget;
+      if (typeof remoteTarget === "number" && Math.abs(media.currentTime - remoteTarget) < 0.25) {
+        delete (media as any).__remoteSeekTarget;
+        return;
+      }
+      if (!(media as any).__applyingRemote) onMediaEvent("seek", media.currentTime);
+    });
+  }
+}
+
+function snapToStream(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  threshold: number,
+) {
+  const left = STREAM_OFFSET_X;
+  const right = STREAM_OFFSET_X + STREAM_W;
+  const centerX = STREAM_OFFSET_X + STREAM_W / 2;
+  const top = STREAM_OFFSET_Y;
+  const bottom = STREAM_OFFSET_Y + STREAM_H;
+  const centerY = STREAM_OFFSET_Y + STREAM_H / 2;
+  let snappedX = x;
+  let snappedY = y;
+  let guideX: number | undefined;
+  let guideY: number | undefined;
+
+  const xCandidates = [
+    { distance: Math.abs(x - left), value: left, guide: left },
+    { distance: Math.abs(x + width / 2 - centerX), value: centerX - width / 2, guide: centerX },
+    { distance: Math.abs(x + width - right), value: right - width, guide: right },
+  ].sort((a, b) => a.distance - b.distance);
+  if (xCandidates[0].distance <= threshold) {
+    snappedX = xCandidates[0].value;
+    guideX = xCandidates[0].guide;
+  }
+
+  const yCandidates = [
+    { distance: Math.abs(y - top), value: top, guide: top },
+    { distance: Math.abs(y + height / 2 - centerY), value: centerY - height / 2, guide: centerY },
+    { distance: Math.abs(y + height - bottom), value: bottom - height, guide: bottom },
+  ].sort((a, b) => a.distance - b.distance);
+  if (yCandidates[0].distance <= threshold) {
+    snappedY = yCandidates[0].value;
+    guideY = yCandidates[0].guide;
+  }
+
+  return { x: snappedX, y: snappedY, guideX, guideY };
 }
 
 function makeSeekButtons(
@@ -432,7 +494,9 @@ function makeSeekButtons(
     "display:flex;gap:4px;justify-content:center;padding:3px 0;flex-shrink:0;";
   const makeBtn = (label: string, onClick: () => void) => {
     const b = document.createElement("button");
+    b.className = "ui-button ui-button--compact";
     b.textContent = label;
+    b.title = label === "−5s" ? "Seek backward 5 seconds" : "Seek forward 5 seconds";
     b.style.cssText =
       "background:#1e293b;border:1px solid #334;color:#d4d8e0;font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer;font-family:Inter,sans-serif;";
     b.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -469,6 +533,7 @@ function createMediaElement(
     ) => void;
     onMediaReady?: (mediaEl: HTMLMediaElement) => void;
     onVolumeChange?: (vol: number) => void;
+    onVisibilityChange?: (visible: boolean) => void;
   } = {},
 ): HTMLElement {
   const {
@@ -476,6 +541,7 @@ function createMediaElement(
     onMediaEvent,
     onMediaReady,
     onVolumeChange,
+    onVisibilityChange,
   } = options;
   const { type, src } = el;
 
@@ -520,137 +586,49 @@ function createMediaElement(
       return video;
     }
 
-    // Dashboard: custom controls + full drag overlay so the video face never toggles play
-    video.controls = false;
+    // Dashboard: use the browser player for reliable, accessible playback.
+    // A small dashboard-only handle preserves canvas dragging without covering
+    // the player controls or changing the OBS-rendered video.
+    video.controls = true;
     video.style.cssText =
-      "width:100%;height:100%;object-fit:contain;display:block;";
+      "width:100%;height:100%;object-fit:contain;display:block;background:#000;";
 
-    if (onMediaEvent) attachMediaListeners(video, onMediaEvent);
+    if (onVisibilityChange) {
+      video.addEventListener("play", () => onVisibilityChange(true));
+      video.addEventListener("ended", () => onVisibilityChange(false));
+    }
+    if (onMediaEvent) attachMediaListeners(video, onMediaEvent, true);
     onMediaReady?.(video);
 
-    const wrap = document.createElement("div");
-    wrap.style.cssText =
-      "position:relative;width:100%;height:100%;display:flex;flex-direction:column;box-sizing:border-box;background:transparent;";
-
-    // Video area (fills available space)
-    const videoArea = document.createElement("div");
-    videoArea.style.cssText =
-      "flex:1;position:relative;overflow:hidden;min-height:0;background:transparent;";
-    videoArea.appendChild(video);
-
-    // Full-size transparent overlay — captures all pointer events on the video face,
-    // preventing any click from reaching the video element (no accidental play/pause).
-    // makeDraggable with capture:true handles drag; this layer just blocks face clicks.
-    const faceOverlay = document.createElement("div");
-    faceOverlay.style.cssText =
-      "position:absolute;inset:0;z-index:2;cursor:move;";
-    faceOverlay.title = "Drag to move · Right-drag to rotate";
-    videoArea.appendChild(faceOverlay);
-
-    // Custom controls bar
-    const ctrl = document.createElement("div");
-    ctrl.style.cssText =
-      "display:flex;align-items:center;gap:4px;padding:4px 6px;background:#0f172a;flex-shrink:0;border-top:1px solid #1e293b;";
-
-    const playBtn = document.createElement("button");
-    playBtn.innerHTML = iconHTML(Play);
-    playBtn.style.cssText =
-      "background:none;border:none;color:#d4d8e0;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;display:flex;align-items:center;";
-    playBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    playBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      video.paused ? video.play() : video.pause();
-    });
-    video.addEventListener("play", () => {
-      playBtn.innerHTML = iconHTML(Pause);
-    });
-    video.addEventListener("pause", () => {
-      playBtn.innerHTML = iconHTML(Play);
-    });
-
-    const timeDisplay = document.createElement("span");
-    timeDisplay.style.cssText =
-      "font-size:9px;color:#64748b;font-family:monospace;white-space:nowrap;flex-shrink:0;";
-    timeDisplay.textContent = "0:00";
-
-    const progress = document.createElement("input");
-    progress.type = "range";
-    progress.min = "0";
-    progress.max = "100";
-    progress.value = "0";
-    progress.style.cssText =
-      "flex:1;min-width:0;accent-color:#6366f1;cursor:pointer;";
-    const onProgressChange = () => {
-      if (video.duration) {
-        const t = (Number(progress.value) / 100) * video.duration;
-        video.currentTime = t;
-        onMediaEvent?.("seek", t);
-      }
-    };
-    progress.addEventListener("input", onProgressChange);
-    progress.addEventListener("change", onProgressChange);
-
-    const fmt = (s: number) => {
-      const m = Math.floor(s / 60);
-      return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-    };
-    video.addEventListener("timeupdate", () => {
-      if (!video.duration) return;
-      progress.value = String((video.currentTime / video.duration) * 100);
-      timeDisplay.textContent =
-        fmt(video.currentTime) + " / " + fmt(video.duration);
-    });
     video.addEventListener("loadedmetadata", () => {
-      timeDisplay.textContent = "0:00 / " + fmt(video.duration);
       if (el.mediaCurrentTime && el.mediaCurrentTime > 0) {
+        (video as any).__remoteSeekTarget = el.mediaCurrentTime;
         video.currentTime = el.mediaCurrentTime;
       }
     });
+    video.addEventListener("volumechange", () => onVolumeChange?.(video.volume));
 
-    const seekBtn = (label: string, sec: number) => {
-      const b = document.createElement("button");
-      b.textContent = label;
-      b.style.cssText =
-        "background:none;border:none;color:#9aa3b2;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;";
-      b.addEventListener("mousedown", (e) => e.stopPropagation());
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const t = Math.max(
-          0,
-          Math.min(video.duration || 0, video.currentTime + sec),
-        );
-        video.currentTime = t;
-        onMediaEvent?.("seek", t);
-      });
-      return b;
-    };
+    const wrap = document.createElement("div");
+    wrap.style.cssText =
+      "position:relative;width:100%;height:100%;background:#000;overflow:hidden;";
+    wrap.appendChild(video);
 
-    const volSlider = document.createElement("input");
-    volSlider.type = "range";
-    volSlider.min = "0";
-    volSlider.max = "1";
-    volSlider.step = "0.01";
-    volSlider.value = String(el.mediaVolume ?? 0.25);
-    volSlider.title = "Volume";
-    volSlider.style.cssText =
-      "width:50px;accent-color:#6366f1;cursor:pointer;flex-shrink:0;";
-    const onVolChange = () => {
-      const vol = parseFloat(volSlider.value);
-      video.volume = vol;
-      onVolumeChange?.(vol);
-    };
-    volSlider.addEventListener("input", onVolChange);
-    volSlider.addEventListener("change", onVolChange);
+    const dragHandle = document.createElement("div");
+    dragHandle.className = "video-drag-handle";
+    dragHandle.title = "Drag to move · Right-drag to rotate";
+    dragHandle.style.cssText =
+      "position:absolute;top:0;left:0;right:0;bottom:44px;z-index:2;" +
+      "display:flex;align-items:flex-start;justify-content:center;padding-top:6px;" +
+      "cursor:move;user-select:none;box-sizing:border-box;";
 
-    ctrl.appendChild(playBtn);
-    ctrl.appendChild(seekBtn("−5s", -5));
-    ctrl.appendChild(progress);
-    ctrl.appendChild(seekBtn("+5s", 5));
-    ctrl.appendChild(volSlider);
-    ctrl.appendChild(timeDisplay);
-
-    wrap.appendChild(videoArea);
-    wrap.appendChild(ctrl);
+    const dragLabel = document.createElement("span");
+    dragLabel.textContent = "Drag";
+    dragLabel.style.cssText =
+      "padding:3px 12px;border-radius:999px;background:rgba(15,23,42,.78);" +
+      "border:1px solid rgba(148,163,184,.45);color:#e2e8f0;" +
+      "font:10px Inter,sans-serif;pointer-events:none;";
+    dragHandle.appendChild(dragLabel);
+    wrap.appendChild(dragHandle);
     return wrap;
   }
 
@@ -702,6 +680,8 @@ function createMediaElement(
     ctrl.style.cssText = "display:flex;align-items:center;gap:4px;width:100%;";
 
     const playBtn = document.createElement("button");
+    playBtn.className = "ui-icon-button ui-button--compact";
+    playBtn.title = "Play or pause this audio element";
     playBtn.innerHTML = iconHTML(Play);
     playBtn.style.cssText =
       "background:none;border:none;color:#d4d8e0;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;display:flex;align-items:center;";
@@ -719,7 +699,9 @@ function createMediaElement(
 
     const makeAudioSeekBtn = (label2: string, sec: number) => {
       const b = document.createElement("button");
+      b.className = "ui-button ui-button--compact";
       b.textContent = label2;
+      b.title = sec < 0 ? "Seek backward 5 seconds" : "Seek forward 5 seconds";
       b.style.cssText =
         "background:none;border:none;color:#9aa3b2;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;flex-shrink:0;";
       b.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -741,7 +723,7 @@ function createMediaElement(
     audioProgress.max = "100";
     audioProgress.value = "0";
     audioProgress.style.cssText =
-      "flex:1;min-width:0;accent-color:#6366f1;cursor:pointer;";
+      "flex:1;min-width:0;accent-color:var(--accent-border);cursor:pointer;";
     const onAudioProgress = () => {
       if (audio.duration) {
         const t = (Number(audioProgress.value) / 100) * audio.duration;
@@ -767,7 +749,7 @@ function createMediaElement(
     audioVol.value = String(el.mediaVolume ?? 0.25);
     audioVol.title = "Volume";
     audioVol.style.cssText =
-      "width:45px;accent-color:#6366f1;cursor:pointer;flex-shrink:0;";
+      "width:45px;accent-color:var(--accent-border);cursor:pointer;flex-shrink:0;";
     const onAudioVol = () => {
       const vol = parseFloat(audioVol.value);
       audio.volume = vol;
@@ -849,6 +831,7 @@ export function ElementPanel({
   onGroup,
   onUngroup,
   onElementChange,
+  footer,
 }: {
   elements: CanvasElement[];
   selectedIds: Set<string>;
@@ -858,6 +841,7 @@ export function ElementPanel({
   onGroup: () => void;
   onUngroup: () => void;
   onElementChange: (id: string, changes: Partial<CanvasElement>) => void;
+  footer?: React.ReactNode;
 }) {
   const slots = buildSlots(elements);
   const icon = (t: string) => {
@@ -877,6 +861,85 @@ export function ElementPanel({
     (id) => elements.find((e) => e.id === id)?.groupId,
   );
   const canGroup = selectedIds.size >= 2;
+  const selectedElement =
+    selectedIds.size === 1
+      ? elements.find((element) => selectedIds.has(element.id))
+      : undefined;
+
+  const fitSelectedToStream = (mode: "fit" | "fill") => {
+    if (!selectedElement || selectedElement.width <= 0 || selectedElement.height <= 0)
+      return;
+    const factor =
+      mode === "fit"
+        ? Math.min(
+            STREAM_W / selectedElement.width,
+            STREAM_H / selectedElement.height,
+          )
+        : Math.max(
+            STREAM_W / selectedElement.width,
+            STREAM_H / selectedElement.height,
+          );
+    const width = selectedElement.width * factor;
+    const height = selectedElement.height * factor;
+    onElementChange(selectedElement.id, {
+      x: STREAM_OFFSET_X + (STREAM_W - width) / 2,
+      y: STREAM_OFFSET_Y + (STREAM_H - height) / 2,
+      width,
+      height,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      dvdEnabled: false,
+    });
+  };
+
+  const toggleDvdMotion = () => {
+    if (!selectedElement) return;
+    if (selectedElement.dvdEnabled) {
+      const position = getDvdPosition(selectedElement);
+      onElementChange(selectedElement.id, {
+        dvdEnabled: false,
+        x: position.x,
+        y: position.y,
+      });
+      return;
+    }
+    onElementChange(selectedElement.id, createDvdMotion(selectedElement));
+  };
+
+  const setDvdSpeed = (speed: number) => {
+    if (
+      !selectedElement?.dvdEnabled ||
+      selectedElement.dvdVelocityX === undefined ||
+      selectedElement.dvdVelocityY === undefined
+    )
+      return;
+    const currentSpeed = Math.hypot(
+      selectedElement.dvdVelocityX,
+      selectedElement.dvdVelocityY,
+    );
+    if (currentSpeed <= 0) return;
+    const position = getDvdPosition(selectedElement);
+    const factor = speed / currentSpeed;
+    onElementChange(selectedElement.id, {
+      x: position.x,
+      y: position.y,
+      dvdStartX: position.x,
+      dvdStartY: position.y,
+      dvdStartedAt: Date.now(),
+      dvdVelocityX: selectedElement.dvdVelocityX * factor,
+      dvdVelocityY: selectedElement.dvdVelocityY * factor,
+    });
+  };
+
+  const dvdSpeed = selectedElement?.dvdEnabled
+    ? Math.round(
+        Math.hypot(
+          selectedElement.dvdVelocityX ?? 0,
+          selectedElement.dvdVelocityY ?? 0,
+        ),
+      )
+    : 0;
 
   const moveSlot = (idx: number, dir: "up" | "down") => {
     const arr = [...slots];
@@ -905,11 +968,12 @@ export function ElementPanel({
 
   const arrowBtn = (disabled: boolean, label: string, onClick: () => void) => (
     <button
+      className="ui-icon-button ui-button--compact"
       onClick={(e) => {
         e.stopPropagation();
         if (!disabled) onClick();
       }}
-      title={label}
+      title={`Move layer ${label}`}
       style={{
         background: "none",
         border: "none",
@@ -952,7 +1016,7 @@ export function ElementPanel({
           padding: `4px 6px 4px ${inGroup ? 14 : 8}px`,
           cursor: "pointer",
           background: sel ? "#1e2030" : "transparent",
-          borderLeft: sel ? "2px solid #6366f1" : "2px solid transparent",
+          borderLeft: sel ? "2px solid var(--accent-border)" : "2px solid transparent",
         }}
       >
         <span style={{ fontSize: 10 }}>{icon(el.type)}</span>
@@ -960,7 +1024,8 @@ export function ElementPanel({
           style={{
             fontSize: 11,
             flex: 1,
-            color: el.visible ? "#ccc" : "#444",
+            color: el.visible ? "#d1d5db" : "#7c8593",
+            fontWeight: 500,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -983,8 +1048,40 @@ export function ElementPanel({
               : moveSlot(slotIdx, "down"),
           )}
         </div>
+        {el.type === "video" && (
+          <button
+            className="ui-button ui-button--compact"
+            title={
+              el.autoVisibility
+                ? "Auto show is on: play shows the video and ending hides it"
+                : "Automatically show on play and hide when the video ends"
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onElementChange(el.id, {
+                autoVisibility: !el.autoVisibility,
+              });
+            }}
+            style={{
+              background: el.autoVisibility ? "var(--accent-surface-strong)" : "none",
+              border: el.autoVisibility
+                ? "1px solid var(--accent-border)"
+                : "1px solid #333",
+              borderRadius: 3,
+              cursor: "pointer",
+              padding: "1px 4px",
+              color: el.autoVisibility ? "var(--accent-text)" : "#555",
+              flexShrink: 0,
+              fontSize: 8,
+              fontFamily: "Inter,sans-serif",
+            }}
+          >
+            AUTO
+          </button>
+        )}
         <button
-          title="Toggle visibility"
+          className="ui-icon-button ui-button--compact"
+          title={el.visible ? "Hide this layer from OBS" : "Show this layer in OBS"}
           onClick={(e) => {
             e.stopPropagation();
             onToggleVisible(el.id);
@@ -1002,6 +1099,8 @@ export function ElementPanel({
           {el.visible ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
         <button
+          className="ui-icon-button ui-button--compact ui-danger"
+          title="Permanently delete this layer"
           onClick={(e) => {
             e.stopPropagation();
             onDelete(el.id);
@@ -1038,7 +1137,8 @@ export function ElementPanel({
         style={{
           padding: "8px 10px 4px",
           fontSize: 10,
-          color: "#555",
+          color: "#8b95a5",
+          fontWeight: 600,
           borderBottom: "1px solid #1e1e1e",
           fontFamily: "Inter,sans-serif",
           letterSpacing: "0.08em",
@@ -1049,15 +1149,89 @@ export function ElementPanel({
       >
         <span>LAYERS</span>
         <div style={{ display: "flex", gap: 4 }}>
+          {selectedElement && (
+            <>
+              <button
+                className="ui-button ui-button--compact"
+                onClick={() => fitSelectedToStream("fit")}
+                title="Fit selected element inside the stream"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  background: "#1e2030",
+                  border: "1px solid #334",
+                  borderRadius: 3,
+                  color: "var(--accent-text)",
+                  fontSize: 9,
+                  padding: "2px 5px",
+                  cursor: "pointer",
+                }}
+              >
+                <Maximize2 size={11} /> Fit
+              </button>
+              <button
+                className="ui-button ui-button--compact"
+                onClick={() => fitSelectedToStream("fill")}
+                title="Fill the stream with the selected element (edges may crop)"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  background: "#1e2030",
+                  border: "1px solid #334",
+                  borderRadius: 3,
+                  color: "var(--accent-text)",
+                  fontSize: 9,
+                  padding: "2px 5px",
+                  cursor: "pointer",
+                }}
+              >
+                <Expand size={11} /> Fill
+              </button>
+              {selectedElement.type !== "audio" && (
+                <button
+                  className="ui-button ui-button--compact"
+                  onClick={toggleDvdMotion}
+                  title={
+                    selectedElement.dvdEnabled
+                      ? "Stop DVD motion at its current position"
+                      : "Bounce the selected element around inside the stream"
+                  }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    background: selectedElement.dvdEnabled
+                      ? "var(--accent-surface-strong)"
+                      : "#1e2030",
+                    border: selectedElement.dvdEnabled
+                      ? "1px solid var(--accent-border)"
+                      : "1px solid #334",
+                    borderRadius: 3,
+                    color: selectedElement.dvdEnabled
+                      ? "var(--accent-text)"
+                      : "#aaa",
+                    fontSize: 9,
+                    padding: "2px 5px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Disc size={11} /> DVD
+                </button>
+              )}
+            </>
+          )}
           {canGroup && !anyGrouped && (
             <button
+              className="ui-button ui-button--compact"
               onClick={onGroup}
               title="Group selected"
               style={{
                 background: "#1e2030",
                 border: "1px solid #334",
                 borderRadius: 3,
-                color: "#818cf8",
+                color: "var(--accent-text)",
                 fontSize: 9,
                 padding: "1px 4px",
                 cursor: "pointer",
@@ -1068,6 +1242,7 @@ export function ElementPanel({
           )}
           {anyGrouped && (
             <button
+              className="ui-button ui-button--compact ui-danger"
               onClick={onUngroup}
               title="Ungroup"
               style={{
@@ -1085,13 +1260,63 @@ export function ElementPanel({
           )}
         </div>
       </div>
+      {selectedElement?.dvdEnabled && (
+        <div
+          style={{
+            height: 34,
+            padding: "5px 9px",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            borderBottom: "1px solid #1e1e1e",
+            background: "var(--accent-surface)",
+            flexShrink: 0,
+          }}
+        >
+          <Disc size={12} color="var(--accent-text)" />
+          <span
+            style={{
+              color: "#aaa",
+              fontSize: 10,
+              fontFamily: "Inter,sans-serif",
+            }}
+          >
+            Speed
+          </span>
+          <input
+            type="range"
+            min="40"
+            max="400"
+            step="10"
+            value={Math.min(400, Math.max(40, dvdSpeed))}
+            onChange={(event) => setDvdSpeed(Number(event.target.value))}
+            style={{
+              minWidth: 0,
+              flex: 1,
+              accentColor: "var(--accent-border)",
+              cursor: "pointer",
+            }}
+          />
+          <span
+            style={{
+              width: 30,
+              color: "var(--accent-text)",
+              fontSize: 9,
+              fontFamily: "monospace",
+              textAlign: "right",
+            }}
+          >
+            {dvdSpeed}
+          </span>
+        </div>
+      )}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {slots.length === 0 && (
           <div
             style={{
               padding: 16,
               fontSize: 11,
-              color: "#333",
+              color: "#737d8c",
               textAlign: "center",
               fontFamily: "Inter,sans-serif",
             }}
@@ -1113,9 +1338,9 @@ export function ElementPanel({
               key={slot.groupId}
               style={{
                 margin: "4px 5px",
-                border: "1px solid rgba(99,102,241,0.45)",
+                border: "1px solid rgba(var(--accent-rgb),0.45)",
                 borderRadius: 5,
-                background: "rgba(99,102,241,0.04)",
+                background: "rgba(var(--accent-rgb),0.04)",
                 overflow: "hidden",
               }}
             >
@@ -1127,24 +1352,24 @@ export function ElementPanel({
                   gap: 3,
                   padding: "4px 6px",
                   background: groupSelected
-                    ? "rgba(99,102,241,0.14)"
-                    : "rgba(99,102,241,0.07)",
-                  borderBottom: "1px solid rgba(99,102,241,0.2)",
+                    ? "rgba(var(--accent-rgb),0.14)"
+                    : "rgba(var(--accent-rgb),0.07)",
+                  borderBottom: "1px solid rgba(var(--accent-rgb),0.2)",
                 }}
               >
-                <GroupIcon size={12} color="#818cf8" />
+                <GroupIcon size={12} color="var(--accent-text)" />
                 <span
                   style={{
                     fontSize: 11,
                     flex: 1,
-                    color: "#818cf8",
+                    color: "var(--accent-text)",
                     fontFamily: "Inter,sans-serif",
                     fontWeight: 600,
                   }}
                 >
                   Group{" "}
                   <span
-                    style={{ color: "#555", fontWeight: 400, fontSize: 10 }}
+                    style={{ color: "#8b95a5", fontWeight: 500, fontSize: 10 }}
                   >
                     ({slot.members.length})
                   </span>
@@ -1161,6 +1386,7 @@ export function ElementPanel({
                 </div>
                 {/* Toggle visibility for all group members */}
                 <button
+                  className="ui-icon-button ui-button--compact"
                   onClick={(e) => {
                     e.stopPropagation();
                     const target = !allVisible;
@@ -1174,7 +1400,7 @@ export function ElementPanel({
                     border: "none",
                     cursor: "pointer",
                     padding: "0 2px",
-                    color: allVisible ? "#818cf8" : "#555",
+                    color: allVisible ? "var(--accent-text)" : "#555",
                     flexShrink: 0,
                     display: "flex",
                   }}
@@ -1197,6 +1423,7 @@ export function ElementPanel({
           );
         })}
       </div>
+      {footer}
       {/* OVER HERE SHOULD BE FINE I THINK */}
     </div>
   );
@@ -1289,7 +1516,7 @@ function useMarquee(
 
     const marquee = document.createElement("div");
     marquee.style.cssText =
-      "position:absolute;border:1.5px dashed #6366f1;background:rgba(99,102,241,0.08);display:none;z-index:500;box-sizing:border-box;";
+      "position:absolute;border:1.5px dashed var(--accent-border);background:rgba(var(--accent-rgb),0.08);display:none;z-index:500;box-sizing:border-box;";
     wrapper.appendChild(marquee);
 
     const onDown = (e: MouseEvent) => {
@@ -1403,7 +1630,6 @@ export interface CanvasStageProps {
   >;
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
-  twitchPlayerRef?: React.MutableRefObject<any>;
   drawingLayer?: React.ReactNode;
 }
 
@@ -1422,7 +1648,6 @@ export function CanvasStage({
   directUpdateRef,
   showTwitchEmbed = false,
   twitchChannel = "",
-  twitchPlayerRef: externalTwitchPlayerRef,
   drawingLayer,
 }: CanvasStageProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -1431,7 +1656,11 @@ export function CanvasStage({
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const twitchEmbedRef = useRef<HTMLDivElement>(null);
-  const twitchDragBlockerRef = useRef<HTMLDivElement>(null);
+  const twitchPointerShieldRef = useRef<HTMLDivElement>(null);
+  const twitchPointerShieldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [twitchPointerShieldActive, setTwitchPointerShieldActive] = useState(false);
+  const snapXGuideRef = useRef<HTMLDivElement>(null);
+  const snapYGuideRef = useRef<HTMLDivElement>(null);
   const twitchInitedRef = useRef(false);
   const twitchPlayerRef = useRef<any>(null);
   const panRef = useRef({ x: 0, y: 0 });
@@ -1450,6 +1679,24 @@ export function CanvasStage({
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
+
+  useEffect(() => {
+    let frame = 0;
+    const animateDvdElements = () => {
+      const now = Date.now();
+      for (const element of elementsRef.current) {
+        if (!element.dvdEnabled || draggingRef.current.has(element.id)) continue;
+        const node = nodeMapRef.current.get(element.id);
+        if (!node) continue;
+        const position = getDvdPosition(element, now);
+        node.style.left = `${position.x}px`;
+        node.style.top = `${position.y}px`;
+      }
+      frame = requestAnimationFrame(animateDvdElements);
+    };
+    frame = requestAnimationFrame(animateDvdElements);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const getZoom = useCallback(() => zoomRef.current, []);
 
@@ -1651,6 +1898,14 @@ export function CanvasStage({
             onMediaReady: (media) => mediaElMap.set(el.id, media),
             onVolumeChange: (vol) =>
               onElementChange(el.id, { mediaVolume: vol }),
+            onVisibilityChange: (visible) => {
+              const current = elementsRef.current.find(
+                (element) => element.id === el.id,
+              );
+              if (current?.autoVisibility) {
+                onElementChange(el.id, { visible });
+              }
+            },
           }),
         );
 
@@ -1658,7 +1913,7 @@ export function CanvasStage({
         const selBorder = document.createElement("div");
         selBorder.className = "sel-border";
         selBorder.style.cssText =
-          "position:absolute;inset:-2px;pointer-events:none;border:2px solid #6366f1;display:none;border-radius:1px;";
+          "position:absolute;inset:-2px;pointer-events:none;border:2px solid var(--accent-border);display:none;border-radius:1px;";
         node.appendChild(selBorder);
 
         // 8 resize handles
@@ -1673,9 +1928,22 @@ export function CanvasStage({
           "br",
         ];
         for (const pos of handlePos) {
-          addResizeHandle(node, pos, getZoom, (changes) =>
-            onElementChange(el.id, changes),
-          );
+          addResizeHandle(node, pos, getZoom, (changes) => {
+            const current = elementsRef.current.find(
+              (element) => element.id === el.id,
+            );
+            if (current?.dvdEnabled) {
+              const position = getDvdPosition(current);
+              onElementChange(el.id, {
+                ...changes,
+                dvdEnabled: false,
+                x: changes.x ?? position.x,
+                y: changes.y ?? position.y,
+              });
+              return;
+            }
+            onElementChange(el.id, changes);
+          });
         }
 
         // Delete button
@@ -1684,6 +1952,8 @@ export function CanvasStage({
         deleteBtn.style.cssText =
           "position:absolute;top:-12px;right:-12px;background:#ef4444;color:white;border:none;cursor:pointer;width:18px;height:18px;z-index:30;border-radius:50%;display:none;align-items:center;justify-content:center;padding:0;";
         deleteBtn.className = "delete-btn";
+        deleteBtn.title = "Permanently delete this element";
+        deleteBtn.setAttribute("aria-label", "Delete element");
         deleteBtn.onclick = (e) => {
           e.stopPropagation();
           onElementDelete(el.id);
@@ -1705,6 +1975,14 @@ export function CanvasStage({
         const onDragStart = () => {
           draggingRef.current.add(el.id);
           const thisEl = elementsRef.current.find((e) => e.id === el.id);
+          if (thisEl?.dvdEnabled) {
+            const position = getDvdPosition(thisEl);
+            onElementChange(el.id, {
+              dvdEnabled: false,
+              x: position.x,
+              y: position.y,
+            });
+          }
           if (thisEl?.groupId) {
             for (const member of elementsRef.current) {
               if (member.groupId === thisEl.groupId)
@@ -1752,7 +2030,22 @@ export function CanvasStage({
             }
           },
           el.type === "text" ? () => onEditText?.(el.id) : null,
-          { onDragStart, onDragEnd },
+          {
+            onDragStart,
+            onDragEnd,
+            onSnapGuides: (guideX, guideY) => {
+              const xGuide = snapXGuideRef.current;
+              const yGuide = snapYGuideRef.current;
+              if (xGuide) {
+                xGuide.style.display = guideX === undefined ? "none" : "block";
+                if (guideX !== undefined) xGuide.style.left = `${guideX}px`;
+              }
+              if (yGuide) {
+                yGuide.style.display = guideY === undefined ? "none" : "block";
+                if (guideY !== undefined) yGuide.style.top = `${guideY}px`;
+              }
+            },
+          },
         );
 
         workspace.appendChild(node);
@@ -1808,7 +2101,7 @@ export function CanvasStage({
 
       // Group indicator — dashed outline per element
       node.style.outline = el.groupId
-        ? "1px dashed rgba(99,102,241,0.35)"
+        ? "1px dashed rgba(var(--accent-rgb),0.35)"
         : "none";
 
       // Selection UI
@@ -1855,7 +2148,7 @@ export function CanvasStage({
       if (!box) {
         box = document.createElement("div");
         box.style.cssText =
-          "position:absolute;border:1.5px dashed rgba(99,102,241,0.45);background:rgba(99,102,241,0.04);pointer-events:none;border-radius:4px;z-index:0;";
+          "position:absolute;border:1.5px dashed rgba(var(--accent-rgb),0.45);background:rgba(var(--accent-rgb),0.04);pointer-events:none;border-radius:4px;z-index:0;";
         workspace.insertBefore(box, workspace.firstChild);
         groupBoxMap.set(gid, box);
       }
@@ -1882,6 +2175,7 @@ export function CanvasStage({
       const media = mediaElMapRef.current.get(payload.id);
       if (!media) return;
       (media as any).__applyingRemote = true;
+      (media as any).__remoteSeekTarget = payload.currentTime;
       media.currentTime = payload.currentTime;
       if (payload.action === "play") {
         media
@@ -1897,7 +2191,7 @@ export function CanvasStage({
     };
   }, [mediaControlRef]);
 
-  // Twitch.Player — init once when shown, destroy on channel change
+  // Twitch.Player — initialize once, then switch channels in the same player.
   useEffect(() => {
     const div = twitchEmbedRef.current;
     if (!div || !twitchChannel) return;
@@ -1909,7 +2203,15 @@ export function CanvasStage({
 
     div.style.display = "block";
 
-    if (twitchInitedRef.current) return;
+    if (twitchInitedRef.current) {
+      if (twitchPointerShieldTimerRef.current) {
+        clearTimeout(twitchPointerShieldTimerRef.current);
+        twitchPointerShieldTimerRef.current = null;
+      }
+      setTwitchPointerShieldActive(false);
+      twitchPlayerRef.current?.setChannel(twitchChannel);
+      return;
+    }
     const Twitch = (window as any).Twitch;
     if (!Twitch?.Player) return;
     twitchInitedRef.current = true;
@@ -1917,32 +2219,37 @@ export function CanvasStage({
     const player = new Twitch.Player("twitch-player-container", {
       width: "100%",
       height: "100%",
-      channel: "vicksy",
+      channel: twitchChannel,
       parent: [window.location.hostname],
       muted: true,
       autoplay: true,
     });
     twitchPlayerRef.current = player;
-    if (externalTwitchPlayerRef) externalTwitchPlayerRef.current = player;
-  }, [showTwitchEmbed, twitchChannel, externalTwitchPlayerRef]);
+    player.addEventListener(Twitch.Player.PLAYING, () => {
+      if (twitchPointerShieldTimerRef.current) {
+        clearTimeout(twitchPointerShieldTimerRef.current);
+      }
+      twitchPointerShieldTimerRef.current = setTimeout(() => {
+        setTwitchPointerShieldActive(true);
+        twitchPointerShieldTimerRef.current = null;
+      }, 5000);
+    });
+    player.addEventListener(Twitch.Player.PAUSE, () => {
+      if (twitchPointerShieldTimerRef.current) {
+        clearTimeout(twitchPointerShieldTimerRef.current);
+        twitchPointerShieldTimerRef.current = null;
+      }
+    });
+  }, [showTwitchEmbed, twitchChannel]);
 
-  // Block iframe pointer events during drags so mousemove reaches the canvas
-  useEffect(() => {
-    const blocker = twitchDragBlockerRef.current;
-    if (!blocker) return;
-    const enable = () => {
-      blocker.style.pointerEvents = "auto";
-    };
-    const disable = () => {
-      blocker.style.pointerEvents = "none";
-    };
-    document.addEventListener("mousedown", enable);
-    document.addEventListener("mouseup", disable);
-    return () => {
-      document.removeEventListener("mousedown", enable);
-      document.removeEventListener("mouseup", disable);
-    };
-  }, []);
+  useEffect(
+    () => () => {
+      if (twitchPointerShieldTimerRef.current) {
+        clearTimeout(twitchPointerShieldTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // Auto-resume when the tab regains visibility (browser pauses background tabs)
   useEffect(() => {
@@ -2003,7 +2310,7 @@ export function CanvasStage({
             top: STREAM_OFFSET_Y,
             width: STREAM_W,
             height: STREAM_H,
-            display: "none",
+            display: showTwitchEmbed ? "block" : "none",
             overflow: "hidden",
           }}
         >
@@ -2011,16 +2318,21 @@ export function CanvasStage({
             id="twitch-player-container"
             style={{ width: "100%", height: "100%" }}
           />
-          {/* Transparent blocker — activated during mousedown to prevent iframe from eating drag events */}
-          <div
-            ref={twitchDragBlockerRef}
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              zIndex: 1,
-            }}
-          />
+          {/* Twitch must be unobstructed while it initializes. Once PLAYING is
+              confirmed, this surface receives canvas pointer movement without
+              interfering with the already-running video. */}
+          {twitchPointerShieldActive && (
+            <div
+              id="twitch-pointer-shield"
+              ref={twitchPointerShieldRef}
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 1,
+                cursor: "default",
+              }}
+            />
+          )}
         </div>
         <div
           className="viewport-rect"
@@ -2029,7 +2341,7 @@ export function CanvasStage({
             left: STREAM_OFFSET_X,
             top: STREAM_OFFSET_Y - 22,
             fontSize: 10,
-            color: "#6366f1",
+            color: "var(--accent-border)",
             fontFamily: "Inter,sans-serif",
             userSelect: "none",
             whiteSpace: "nowrap",
@@ -2047,10 +2359,38 @@ export function CanvasStage({
             width: STREAM_W,
             height: STREAM_H,
             background: "transparent",
-            outline: "2px solid #6366f1",
+            outline: "2px solid var(--accent-border)",
             boxSizing: "border-box",
             pointerEvents: "none",
             zIndex: 1,
+          }}
+        />
+        <div
+          ref={snapXGuideRef}
+          style={{
+            position: "absolute",
+            top: STREAM_OFFSET_Y,
+            height: STREAM_H,
+            width: 2,
+            background: "#f97316",
+            boxShadow: "0 0 6px rgba(249,115,22,0.8)",
+            pointerEvents: "none",
+            display: "none",
+            zIndex: 2147483647,
+          }}
+        />
+        <div
+          ref={snapYGuideRef}
+          style={{
+            position: "absolute",
+            left: STREAM_OFFSET_X,
+            width: STREAM_W,
+            height: 2,
+            background: "#f97316",
+            boxShadow: "0 0 6px rgba(249,115,22,0.8)",
+            pointerEvents: "none",
+            display: "none",
+            zIndex: 2147483647,
           }}
         />
         {drawingLayer}
@@ -2081,7 +2421,9 @@ export function CanvasStage({
           rotate · Dbl-click text to edit · Del to remove
         </span>
         <button
+          className="ui-button"
           onClick={resetView}
+          title="Reset zoom and center the 1920×1080 stream area"
           style={{
             background: "rgba(0,0,0,0.7)",
             color: "#aaa",
@@ -2118,6 +2460,7 @@ export const OverlayStage = forwardRef<
   OverlayStageHandle,
   {
     elements: CanvasElement[];
+    cursors?: Map<string, CursorPayload>;
     strokes?: DrawStroke[];
     liveStrokes?: Map<
       string,
@@ -2129,7 +2472,7 @@ export const OverlayStage = forwardRef<
       }
     >;
   }
->(function OverlayStage({ elements, strokes = [], liveStrokes }, ref) {
+>(function OverlayStage({ elements, cursors = new Map(), strokes = [], liveStrokes }, ref) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const posMapRef = useRef<
@@ -2148,6 +2491,35 @@ export const OverlayStage = forwardRef<
   // expensive flood fill is never re-run just because a live stroke updated.
   const drawBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawBakedCountRef = useRef(0);
+  const overlayElementsRef = useRef(elements);
+  useEffect(() => {
+    overlayElementsRef.current = elements;
+  }, [elements]);
+
+  useEffect(() => {
+    let frame = 0;
+    const animateDvdElements = () => {
+      const now = Date.now();
+      for (const element of overlayElementsRef.current) {
+        if (!element.dvdEnabled || element.type === "audio") continue;
+        const node = nodeMapRef.current.get(element.id);
+        if (!node) continue;
+        const position = getDvdPosition(element, now);
+        const x = position.x - STREAM_OFFSET_X;
+        const y = position.y - STREAM_OFFSET_Y;
+        node.style.left = `${x}px`;
+        node.style.top = `${y}px`;
+        const current = posMapRef.current.get(element.id);
+        if (current) {
+          current.x = x;
+          current.y = y;
+        }
+      }
+      frame = requestAnimationFrame(animateDvdElements);
+    };
+    frame = requestAnimationFrame(animateDvdElements);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     let base = drawBaseCanvasRef.current;
@@ -2402,6 +2774,11 @@ export const OverlayStage = forwardRef<
           pointerEvents: "none",
           zIndex: 999,
         }}
+      />
+      <LiveCursors
+        cursors={cursors}
+        pan={{ x: -STREAM_OFFSET_X, y: -STREAM_OFFSET_Y }}
+        zoom={1}
       />
       {/* Hidden audio container */}
       <div ref={audioContainerRef} style={{ display: "none" }} />

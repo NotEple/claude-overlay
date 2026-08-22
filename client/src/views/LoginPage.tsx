@@ -31,7 +31,8 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
 
         <button
           onClick={onLogin}
-          className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-md transition-colors"
+          title="Authenticate with Twitch to open the dashboard"
+          className="ui-button flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white transition-colors"
         >
           <TwitchIcon />
           Login with Twitch

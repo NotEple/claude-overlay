@@ -6,7 +6,18 @@ import type { TextConfig } from "./TextDialog";
 import type { CanvasElement, MediaType } from "../types";
 import { authHeaders } from "../hooks/useAuth";
 import type { DrawToolMode } from "./DrawingCanvas";
-import { Pencil, X, Eraser, PaintBucket, Pin, Trash2 } from "lucide-react";
+import {
+  Pencil,
+  X,
+  Eraser,
+  PaintBucket,
+  Pin,
+  Trash2,
+  ImagePlus,
+  Type,
+  Palette,
+  SlidersHorizontal,
+} from "lucide-react";
 
 const PRESET_COLORS = [
   "#ffffff",
@@ -38,6 +49,52 @@ interface ToolbarProps {
 const ACCEPTED =
   "image/*,video/mp4,video/webm,audio/mpeg,audio/wav,audio/ogg,.gif";
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
+const BUTTON_HEIGHT = 30;
+const ICON_SIZE = 15;
+const TOOLBAR_FONT_SIZE = 12;
+const INITIAL_MEDIA_MAX_WIDTH = 500;
+const INITIAL_MEDIA_MAX_HEIGHT = 350;
+
+async function getVisualMediaSize(file: File) {
+  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+    return null;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const dimensions = await new Promise<{ width: number; height: number }>(
+      (resolve, reject) => {
+        if (file.type.startsWith("image/")) {
+          const image = new Image();
+          image.onload = () =>
+            resolve({ width: image.naturalWidth, height: image.naturalHeight });
+          image.onerror = () => reject(new Error("Could not read image dimensions"));
+          image.src = objectUrl;
+          return;
+        }
+
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.onloadedmetadata = () =>
+          resolve({ width: video.videoWidth, height: video.videoHeight });
+        video.onerror = () => reject(new Error("Could not read video dimensions"));
+        video.src = objectUrl;
+      },
+    );
+    if (dimensions.width <= 0 || dimensions.height <= 0) return null;
+    const scale = Math.min(
+      1,
+      INITIAL_MEDIA_MAX_WIDTH / dimensions.width,
+      INITIAL_MEDIA_MAX_HEIGHT / dimensions.height,
+    );
+    return {
+      width: Math.max(1, Math.round(dimensions.width * scale)),
+      height: Math.max(1, Math.round(dimensions.height * scale)),
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
 
 export function Toolbar({
   onAdd,
@@ -63,6 +120,7 @@ export function Toolbar({
     if (!file) return;
     setUploading(true);
     setError(null);
+    const visualSizePromise = getVisualMediaSize(file).catch(() => null);
     const body = new FormData();
     body.append("file", file);
     try {
@@ -74,6 +132,7 @@ export function Toolbar({
       });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const { url, mimetype } = await res.json();
+      const visualSize = await visualSizePromise;
       const type: MediaType = mimetype.startsWith("audio")
         ? "audio"
         : mimetype.startsWith("video")
@@ -87,8 +146,8 @@ export function Toolbar({
         src: `${SERVER_URL}${url}`,
         x: 200,
         y: 200,
-        width: 400,
-        height: 225,
+        width: visualSize?.width ?? 400,
+        height: visualSize?.height ?? 225,
         rotation: 0,
         scaleX: 1,
         scaleY: 1,
@@ -123,20 +182,26 @@ export function Toolbar({
 
   const toolBtn = (label: ReactNode, mode: DrawToolMode, title: string) => (
     <button
+      className="ui-button"
       onClick={() => onToolModeChange(mode)}
       title={title}
       style={{
-        padding: "5px 12px",
-        background: toolMode === mode ? "#4f46e5" : "#1e293b",
-        border: `1px solid ${toolMode === mode ? "#6366f1" : "#334155"}`,
+        height: BUTTON_HEIGHT,
+        padding: "0 11px",
+        background: toolMode === mode ? "var(--accent-solid)" : "#1e293b",
+        border: `1px solid ${toolMode === mode ? "var(--accent-border)" : "#334155"}`,
         borderRadius: 5,
         color: "white",
-        fontSize: 12,
+        fontSize: TOOLBAR_FONT_SIZE,
         cursor: "pointer",
         fontFamily: "Inter, sans-serif",
         display: "flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: 6,
+        boxSizing: "border-box",
+        whiteSpace: "nowrap",
+        lineHeight: 1,
       }}
     >
       {label}
@@ -150,21 +215,26 @@ export function Toolbar({
     title?: string,
   ) => (
     <button
+      className="ui-button"
       onClick={onClick}
       title={title}
       style={{
-        padding: "5px 12px",
-        background: active ? "#4f46e5" : "#1e293b",
-        border: `1px solid ${active ? "#6366f1" : "#334155"}`,
+        height: BUTTON_HEIGHT,
+        padding: "0 11px",
+        background: active ? "var(--accent-solid)" : "#1e293b",
+        border: `1px solid ${active ? "var(--accent-border)" : "#334155"}`,
         borderRadius: 5,
         color: "white",
-        fontSize: 12,
+        fontSize: TOOLBAR_FONT_SIZE,
         cursor: "pointer",
         fontFamily: "Inter, sans-serif",
         whiteSpace: "nowrap",
         display: "flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: 6,
+        boxSizing: "border-box",
+        lineHeight: 1,
       }}
     >
       {label}
@@ -196,41 +266,45 @@ export function Toolbar({
         {!drawMode && (
           <>
             <button
+              className="ui-button"
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
+              title="Upload an image, GIF, video, or audio file"
               style={{
-                padding: "5px 14px",
-                background: "#4f46e5",
-                border: "none",
+                height: BUTTON_HEIGHT,
+                padding: "0 11px",
+                background: "var(--accent-solid)",
+                border: "1px solid var(--accent-border)",
                 borderRadius: 5,
                 color: "white",
-                fontSize: 12,
+                fontSize: TOOLBAR_FONT_SIZE,
                 cursor: uploading ? "not-allowed" : "pointer",
                 opacity: uploading ? 0.6 : 1,
                 fontFamily: "Inter, sans-serif",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                boxSizing: "border-box",
+                whiteSpace: "nowrap",
+                lineHeight: 1,
               }}
             >
-              {uploading ? "Uploading…" : "+ Media"}
+              <ImagePlus size={ICON_SIZE} />
+              {uploading ? "Uploading…" : "Media"}
             </button>
-            <button
-              onClick={() => setShowTextDialog(true)}
-              style={{
-                padding: "5px 14px",
-                background: "#1e293b",
-                border: "1px solid #334155",
-                borderRadius: 5,
-                color: "white",
-                fontSize: 12,
-                cursor: "pointer",
-                fontFamily: "Inter, sans-serif",
-              }}
-            >
-              + Text
-            </button>
+            {btn(
+              <>
+                <Type size={ICON_SIZE} /> Text
+              </>,
+              () => setShowTextDialog(true),
+              false,
+              "Add text",
+            )}
             <div
               style={{
                 width: 1,
-                height: 20,
+                height: 24,
                 background: "#2a2a2a",
                 margin: "0 2px",
               }}
@@ -241,11 +315,11 @@ export function Toolbar({
         {btn(
           drawMode ? (
             <>
-              <X size={14} /> Exit Draw
+              <X size={ICON_SIZE} /> Exit Draw
             </>
           ) : (
             <>
-              <Pencil size={14} /> Draw
+              <Pencil size={ICON_SIZE} /> Draw
             </>
           ),
           onDrawModeToggle,
@@ -258,21 +332,21 @@ export function Toolbar({
             {/* Tool buttons */}
             {toolBtn(
               <>
-                <Pencil size={14} /> Pen
+                <Pencil size={ICON_SIZE} /> Pen
               </>,
               "pen",
               "Freehand pen",
             )}
             {toolBtn(
               <>
-                <Eraser size={14} /> Erase
+                <Eraser size={ICON_SIZE} /> Erase
               </>,
               "eraser",
               "Eraser",
             )}
             {toolBtn(
               <>
-                <PaintBucket size={14} /> Fill
+                <PaintBucket size={ICON_SIZE} /> Fill
               </>,
               "fill",
               "Flood fill enclosed area",
@@ -281,14 +355,26 @@ export function Toolbar({
             <div
               style={{
                 width: 1,
-                height: 20,
+                height: 24,
                 background: "#2a2a2a",
                 margin: "0 2px",
               }}
             />
 
             {/* Color swatches */}
-            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+            <div
+              style={{
+                height: BUTTON_HEIGHT,
+                display: "flex",
+                gap: 4,
+                alignItems: "center",
+                fontSize: TOOLBAR_FONT_SIZE,
+                color: "#94a3b8",
+                fontFamily: "Inter,sans-serif",
+              }}
+            >
+              <Palette size={ICON_SIZE} />
+              <span>Color</span>
               {PRESET_COLORS.map((c) => (
                 <button
                   key={c}
@@ -297,10 +383,11 @@ export function Toolbar({
                     if (toolMode === "eraser" || toolMode === "fill")
                       onToolModeChange("pen");
                   }}
-                  title={c}
+                  title={`Use ${c} as the drawing color`}
+                  aria-label={`Use drawing color ${c}`}
                   style={{
-                    width: 18,
-                    height: 18,
+                    width: 20,
+                    height: 20,
                     background: c,
                     border:
                       drawColor === c && toolMode === "pen"
@@ -320,10 +407,10 @@ export function Toolbar({
                   onDrawColorChange(e.target.value);
                   if (toolMode !== "pen") onToolModeChange("pen");
                 }}
-                title="Custom color"
+                title="Choose a custom drawing color"
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 24,
+                  height: 24,
                   padding: 0,
                   border: "1.5px solid #555",
                   borderRadius: 3,
@@ -335,11 +422,19 @@ export function Toolbar({
 
             {/* Size slider — not shown for fill */}
             {toolMode !== "fill" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div
+                style={{
+                  height: BUTTON_HEIGHT,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                <SlidersHorizontal size={ICON_SIZE} color="#94a3b8" />
                 <span
                   style={{
-                    fontSize: 11,
-                    color: "#666",
+                    fontSize: TOOLBAR_FONT_SIZE,
+                    color: "#94a3b8",
                     fontFamily: "Inter,sans-serif",
                     whiteSpace: "nowrap",
                   }}
@@ -352,12 +447,12 @@ export function Toolbar({
                   max="60"
                   value={drawSize}
                   onChange={(e) => onDrawSizeChange(Number(e.target.value))}
-                  style={{ width: 80, accentColor: "#6366f1" }}
+                  style={{ width: 80, accentColor: "var(--accent-border)" }}
                 />
                 <span
                   style={{
-                    fontSize: 11,
-                    color: "#555",
+                    fontSize: TOOLBAR_FONT_SIZE,
+                    color: "#94a3b8",
                     fontFamily: "Inter,sans-serif",
                     minWidth: 20,
                   }}
@@ -370,7 +465,7 @@ export function Toolbar({
             {hasStrokes &&
               btn(
                 <>
-                  <Pin size={14} /> Add as Element
+                  <Pin size={ICON_SIZE} /> Add as Element
                 </>,
                 onSaveDrawingAsElement,
                 false,
@@ -379,7 +474,7 @@ export function Toolbar({
             {hasStrokes &&
               btn(
                 <>
-                  <Trash2 size={14} /> Clear
+                  <Trash2 size={ICON_SIZE} /> Clear
                 </>,
                 onDrawClear,
                 false,

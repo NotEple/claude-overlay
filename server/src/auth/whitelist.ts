@@ -18,7 +18,7 @@ whitelistRouter.post('/', requireAdmin, async (req, res) => {
   try { twitchUser = await lookupTwitchUser(clean); }
   catch { res.status(502).json({ error: 'Could not reach Twitch API' }); return; }
   if (!twitchUser) { res.status(404).json({ error: `Twitch account "${clean}" does not exist` }); return; }
-  await addToWhitelist(twitchUser.login, (req as any).authUser?.login ?? req.session.user!.login);
+  await addToWhitelist(twitchUser.login, req.authUser!.login);
   res.json({ username: twitchUser.login, displayName: twitchUser.display_name, avatar: twitchUser.profile_image_url });
 });
 

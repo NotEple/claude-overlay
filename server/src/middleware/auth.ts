@@ -4,14 +4,14 @@ import { getUserFromRequest } from '../auth/routes.js';
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const user = getUserFromRequest(req);
   if (!user) { res.status(401).json({ error: 'Not authenticated' }); return; }
-  (req as any).authUser = user;
+  req.authUser = user;
   next();
 }
 
 export function requireOwner(req: Request, res: Response, next: NextFunction) {
   const user = getUserFromRequest(req);
   if (!user?.isOwner) { res.status(403).json({ error: 'Owner only' }); return; }
-  (req as any).authUser = user;
+  req.authUser = user;
   next();
 }
 
@@ -19,6 +19,6 @@ export function requireOwner(req: Request, res: Response, next: NextFunction) {
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const user = getUserFromRequest(req);
   if (!user?.isAdmin) { res.status(403).json({ error: 'Admin only' }); return; }
-  (req as any).authUser = user;
+  req.authUser = user;
   next();
 }

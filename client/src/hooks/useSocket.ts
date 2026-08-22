@@ -23,8 +23,13 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   const socketRef = useRef<AppSocket | null>(null);
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [connected, setConnected] = useState(false);
+  const [overlayConnected, setOverlayConnected] = useState(false);
+  const [overlayCount, setOverlayCount] = useState(0);
   const [cursors, setCursors] = useState<Map<string, CursorPayload>>(new Map());
   const [activeUsers, setActiveUsers] = useState<UserPresencePayload[]>([]);
+  const [showCursorOnOverlay, setShowCursorOnOverlayState] = useState(
+    () => localStorage.getItem('show_cursor_on_overlay') === 'true',
+  );
   const [strokes, setStrokes] = useState<DrawStroke[]>([]);
   const [liveStrokes, setLiveStrokes] = useState<Map<string, LiveDrawStroke>>(new Map());
 
@@ -37,6 +42,7 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   // Pending updates — batched per rAF frame so overlay gets one setState per frame
   const pendingUpdates = useRef<Map<string, Partial<CanvasElement>>>(new Map());
   const pendingCursors = useRef<Map<string, CursorPayload>>(new Map());
+  const cursorExpiryTimers = useRef<Map<string, number>>(new Map());
   const rafRef = useRef(0);
 
   useEffect(() => {
@@ -51,6 +57,10 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', (err) => console.error('Socket connect error:', err.message));
+    socket.on('overlay:status', ({ connected: online, count }) => {
+      setOverlayConnected(online);
+      setOverlayCount(count);
+    });
 
     const normalizeScale = (el: CanvasElement): CanvasElement => ({
       ...el,
@@ -75,10 +85,26 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
 
     socket.on('media:control', (payload) => onMediaControlRef.current?.(payload));
 
-    socket.on('cursor:move', (payload) => { pendingCursors.current.set(payload.userId, payload); });
+    socket.on('cursor:move', (payload) => {
+      pendingCursors.current.set(payload.userId, payload);
+      const existingTimer = cursorExpiryTimers.current.get(payload.userId);
+      if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+      cursorExpiryTimers.current.set(payload.userId, window.setTimeout(() => {
+        pendingCursors.current.delete(payload.userId);
+        setCursors((previous) => {
+          const next = new Map(previous);
+          next.delete(payload.userId);
+          return next;
+        });
+        cursorExpiryTimers.current.delete(payload.userId);
+      }, 650));
+    });
     socket.on('users:list', (users) => setActiveUsers(users));
     socket.on('user:joined', (user) => setActiveUsers((p) => [...p.filter((u) => u.userId !== user.userId), user]));
     socket.on('user:left', ({ userId }) => {
+      const timer = cursorExpiryTimers.current.get(userId);
+      if (timer !== undefined) window.clearTimeout(timer);
+      cursorExpiryTimers.current.delete(userId);
       setActiveUsers((p) => p.filter((u) => u.userId !== userId));
       setCursors((p) => { const m = new Map(p); m.delete(userId); return m; });
     });
@@ -147,6 +173,8 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     return () => {
       socket.disconnect();
       cancelAnimationFrame(rafRef.current);
+      cursorExpiryTimers.current.forEach((timer) => window.clearTimeout(timer));
+      cursorExpiryTimers.current.clear();
     };
   }, [mode]);
 
@@ -164,7 +192,11 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     socketRef.current?.emit('element:update', { id, changes });
   }, []);
   const removeElement = (id: string) => socketRef.current?.emit('element:remove', { id });
-  const sendCursor = useCallback((x: number, y: number) => socketRef.current?.volatile.emit('cursor:move', { x, y }), []);
+  const setShowCursorOnOverlay = useCallback((visible: boolean) => {
+    localStorage.setItem('show_cursor_on_overlay', String(visible));
+    setShowCursorOnOverlayState(visible);
+  }, []);
+  const sendCursor = useCallback((x: number, y: number) => socketRef.current?.volatile.emit('cursor:move', { x, y, showOnOverlay: showCursorOnOverlay }), [showCursorOnOverlay]);
   const emitMediaControl = useCallback((payload: MediaControlPayload) => socketRef.current?.emit('media:control', payload), []);
   const refreshOverlay = useCallback(() => socketRef.current?.emit('overlay:refresh'), []);
   const addStroke = useCallback((stroke: DrawStroke) => {
@@ -182,5 +214,5 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     socketRef.current?.volatile.emit('draw:live', data);
   }, []);
 
-  return { elements, connected, cursors, activeUsers, strokes, liveStrokes, addElement, updateElement, removeElement, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
+  return { elements, connected, overlayConnected, overlayCount, cursors, activeUsers, showCursorOnOverlay, setShowCursorOnOverlay, strokes, liveStrokes, addElement, updateElement, removeElement, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
 }

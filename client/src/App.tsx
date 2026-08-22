@@ -34,7 +34,7 @@ function DashboardApp() {
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: "#818cf8",
+            background: "var(--accent-text)",
             animation: "pulse 1s infinite",
           }}
         />
