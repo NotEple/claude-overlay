@@ -27,12 +27,11 @@ import type {
   CursorPayload,
   DrawStroke,
   MediaControlPayload,
+  DvdCelebrationSettings,
 } from "../types";
 import { renderAction } from "./DrawingCanvas";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  Play,
-  Pause,
   X,
   Eye,
   EyeOff,
@@ -435,11 +434,15 @@ function attachMediaListeners(
   if (trackNativeSeeking) {
     media.addEventListener("seeked", () => {
       const remoteTarget = (media as any).__remoteSeekTarget;
-      if (typeof remoteTarget === "number" && Math.abs(media.currentTime - remoteTarget) < 0.25) {
+      if (
+        typeof remoteTarget === "number" &&
+        Math.abs(media.currentTime - remoteTarget) < 0.25
+      ) {
         delete (media as any).__remoteSeekTarget;
         return;
       }
-      if (!(media as any).__applyingRemote) onMediaEvent("seek", media.currentTime);
+      if (!(media as any).__applyingRemote)
+        onMediaEvent("seek", media.currentTime);
     });
   }
 }
@@ -464,8 +467,16 @@ function snapToStream(
 
   const xCandidates = [
     { distance: Math.abs(x - left), value: left, guide: left },
-    { distance: Math.abs(x + width / 2 - centerX), value: centerX - width / 2, guide: centerX },
-    { distance: Math.abs(x + width - right), value: right - width, guide: right },
+    {
+      distance: Math.abs(x + width / 2 - centerX),
+      value: centerX - width / 2,
+      guide: centerX,
+    },
+    {
+      distance: Math.abs(x + width - right),
+      value: right - width,
+      guide: right,
+    },
   ].sort((a, b) => a.distance - b.distance);
   if (xCandidates[0].distance <= threshold) {
     snappedX = xCandidates[0].value;
@@ -474,8 +485,16 @@ function snapToStream(
 
   const yCandidates = [
     { distance: Math.abs(y - top), value: top, guide: top },
-    { distance: Math.abs(y + height / 2 - centerY), value: centerY - height / 2, guide: centerY },
-    { distance: Math.abs(y + height - bottom), value: bottom - height, guide: bottom },
+    {
+      distance: Math.abs(y + height / 2 - centerY),
+      value: centerY - height / 2,
+      guide: centerY,
+    },
+    {
+      distance: Math.abs(y + height - bottom),
+      value: bottom - height,
+      guide: bottom,
+    },
   ].sort((a, b) => a.distance - b.distance);
   if (yCandidates[0].distance <= threshold) {
     snappedY = yCandidates[0].value;
@@ -483,44 +502,6 @@ function snapToStream(
   }
 
   return { x: snappedX, y: snappedY, guideX, guideY };
-}
-
-function makeSeekButtons(
-  media: HTMLMediaElement,
-  onSeek?: (t: number) => void,
-): HTMLElement {
-  const bar = document.createElement("div");
-  bar.style.cssText =
-    "display:flex;gap:4px;justify-content:center;padding:3px 0;flex-shrink:0;";
-  const makeBtn = (label: string, onClick: () => void) => {
-    const b = document.createElement("button");
-    b.className = "ui-button ui-button--compact";
-    b.textContent = label;
-    b.title = label === "−5s" ? "Seek backward 5 seconds" : "Seek forward 5 seconds";
-    b.style.cssText =
-      "background:#1e293b;border:1px solid #334;color:#d4d8e0;font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer;font-family:Inter,sans-serif;";
-    b.addEventListener("mousedown", (e) => e.stopPropagation());
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onClick();
-    });
-    return b;
-  };
-  bar.appendChild(
-    makeBtn("−5s", () => {
-      const t = Math.max(0, media.currentTime - 5);
-      media.currentTime = t;
-      onSeek?.(t);
-    }),
-  );
-  bar.appendChild(
-    makeBtn("+5s", () => {
-      const t = Math.min(media.duration || Infinity, media.currentTime + 5);
-      media.currentTime = t;
-      onSeek?.(t);
-    }),
-  );
-  return bar;
 }
 
 function createMediaElement(
@@ -606,7 +587,9 @@ function createMediaElement(
         video.currentTime = el.mediaCurrentTime;
       }
     });
-    video.addEventListener("volumechange", () => onVolumeChange?.(video.volume));
+    video.addEventListener("volumechange", () =>
+      onVolumeChange?.(video.volume),
+    );
 
     const wrap = document.createElement("div");
     wrap.style.cssText =
@@ -645,6 +628,9 @@ function createMediaElement(
     audio.src = src;
     audio.volume = el.mediaVolume ?? 0.25;
     audio.preload = "auto";
+    audio.controls = true;
+    audio.style.cssText =
+      "display:block;width:100%;height:54px;flex-shrink:0;accent-color:var(--accent-border);";
     if (el.mediaCurrentTime && el.mediaCurrentTime > 0) {
       audio.addEventListener(
         "loadedmetadata",
@@ -655,118 +641,36 @@ function createMediaElement(
       );
     }
 
-    if (onMediaEvent) attachMediaListeners(audio, onMediaEvent);
+    if (onMediaEvent) attachMediaListeners(audio, onMediaEvent, true);
+    audio.addEventListener("volumechange", () =>
+      onVolumeChange?.(audio.volume),
+    );
     onMediaReady?.(audio);
 
     const wrap = document.createElement("div");
     wrap.style.cssText =
-      "width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px;box-sizing:border-box;background:rgba(20,20,30,0.85);border-radius:8px;";
+      "width:100%;height:100%;min-height:86px;display:flex;flex-direction:column;" +
+      "box-sizing:border-box;background:#17171b;border:1px solid #34343c;border-radius:8px;overflow:hidden;";
 
     const name = getFileLabel(src) || "Audio";
-    const label = document.createElement("span");
+    const label = document.createElement("div");
+    label.title = `${name} · Drag to move · Right-drag to rotate`;
     label.style.cssText =
-      "color:#ccc;font-size:11px;font-family:Inter,sans-serif;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:4px;";
+      "height:30px;flex-shrink:0;padding:0 10px;box-sizing:border-box;color:#d6d8de;" +
+      "font:600 11px Inter,sans-serif;display:flex;align-items:center;gap:6px;cursor:move;" +
+      "background:#202027;border-bottom:1px solid #34343c;user-select:none;";
     const labelIcon = document.createElement("span");
     labelIcon.innerHTML = iconHTML(FileAudio, 12);
     labelIcon.style.cssText = "display:flex;flex-shrink:0;";
     const labelText = document.createElement("span");
     labelText.textContent = name;
-    labelText.style.cssText = "overflow:hidden;text-overflow:ellipsis;";
+    labelText.style.cssText =
+      "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
     label.appendChild(labelIcon);
     label.appendChild(labelText);
 
-    // Custom controls row
-    const ctrl = document.createElement("div");
-    ctrl.style.cssText = "display:flex;align-items:center;gap:4px;width:100%;";
-
-    const playBtn = document.createElement("button");
-    playBtn.className = "ui-icon-button ui-button--compact";
-    playBtn.title = "Play or pause this audio element";
-    playBtn.innerHTML = iconHTML(Play);
-    playBtn.style.cssText =
-      "background:none;border:none;color:#d4d8e0;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;display:flex;align-items:center;";
-    playBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    playBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      audio.paused ? audio.play() : audio.pause();
-    });
-    audio.addEventListener("play", () => {
-      playBtn.innerHTML = iconHTML(Pause);
-    });
-    audio.addEventListener("pause", () => {
-      playBtn.innerHTML = iconHTML(Play);
-    });
-
-    const makeAudioSeekBtn = (label2: string, sec: number) => {
-      const b = document.createElement("button");
-      b.className = "ui-button ui-button--compact";
-      b.textContent = label2;
-      b.title = sec < 0 ? "Seek backward 5 seconds" : "Seek forward 5 seconds";
-      b.style.cssText =
-        "background:none;border:none;color:#9aa3b2;font-size:9px;cursor:pointer;padding:0 1px;white-space:nowrap;flex-shrink:0;";
-      b.addEventListener("mousedown", (e) => e.stopPropagation());
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const t = Math.max(
-          0,
-          Math.min(audio.duration || 0, audio.currentTime + sec),
-        );
-        audio.currentTime = t;
-        onMediaEvent?.("seek", t);
-      });
-      return b;
-    };
-
-    const audioProgress = document.createElement("input");
-    audioProgress.type = "range";
-    audioProgress.min = "0";
-    audioProgress.max = "100";
-    audioProgress.value = "0";
-    audioProgress.style.cssText =
-      "flex:1;min-width:0;accent-color:var(--accent-border);cursor:pointer;";
-    const onAudioProgress = () => {
-      if (audio.duration) {
-        const t = (Number(audioProgress.value) / 100) * audio.duration;
-        audio.currentTime = t;
-        onMediaEvent?.("seek", t);
-      }
-    };
-    audioProgress.addEventListener("mousedown", (e) => e.stopPropagation());
-    audioProgress.addEventListener("input", onAudioProgress);
-    audioProgress.addEventListener("change", onAudioProgress);
-    audio.addEventListener("timeupdate", () => {
-      if (audio.duration)
-        audioProgress.value = String(
-          (audio.currentTime / audio.duration) * 100,
-        );
-    });
-
-    const audioVol = document.createElement("input");
-    audioVol.type = "range";
-    audioVol.min = "0";
-    audioVol.max = "1";
-    audioVol.step = "0.01";
-    audioVol.value = String(el.mediaVolume ?? 0.25);
-    audioVol.title = "Volume";
-    audioVol.style.cssText =
-      "width:45px;accent-color:var(--accent-border);cursor:pointer;flex-shrink:0;";
-    const onAudioVol = () => {
-      const vol = parseFloat(audioVol.value);
-      audio.volume = vol;
-      onVolumeChange?.(vol);
-    };
-    audioVol.addEventListener("mousedown", (e) => e.stopPropagation());
-    audioVol.addEventListener("input", onAudioVol);
-    audioVol.addEventListener("change", onAudioVol);
-
-    ctrl.appendChild(playBtn);
-    ctrl.appendChild(makeAudioSeekBtn("−5s", -5));
-    ctrl.appendChild(audioProgress);
-    ctrl.appendChild(makeAudioSeekBtn("+5s", 5));
-    ctrl.appendChild(audioVol);
-
     wrap.appendChild(label);
-    wrap.appendChild(ctrl);
+    wrap.appendChild(audio);
     return wrap;
   }
 
@@ -867,7 +771,11 @@ export function ElementPanel({
       : undefined;
 
   const fitSelectedToStream = (mode: "fit" | "fill") => {
-    if (!selectedElement || selectedElement.width <= 0 || selectedElement.height <= 0)
+    if (
+      !selectedElement ||
+      selectedElement.width <= 0 ||
+      selectedElement.height <= 0
+    )
       return;
     const factor =
       mode === "fit"
@@ -1016,7 +924,9 @@ export function ElementPanel({
           padding: `4px 6px 4px ${inGroup ? 14 : 8}px`,
           cursor: "pointer",
           background: sel ? "#1e2030" : "transparent",
-          borderLeft: sel ? "2px solid var(--accent-border)" : "2px solid transparent",
+          borderLeft: sel
+            ? "2px solid var(--accent-border)"
+            : "2px solid transparent",
         }}
       >
         <span style={{ fontSize: 10 }}>{icon(el.type)}</span>
@@ -1063,7 +973,9 @@ export function ElementPanel({
               });
             }}
             style={{
-              background: el.autoVisibility ? "var(--accent-surface-strong)" : "none",
+              background: el.autoVisibility
+                ? "var(--accent-surface-strong)"
+                : "none",
               border: el.autoVisibility
                 ? "1px solid var(--accent-border)"
                 : "1px solid #333",
@@ -1081,7 +993,9 @@ export function ElementPanel({
         )}
         <button
           className="ui-icon-button ui-button--compact"
-          title={el.visible ? "Hide this layer from OBS" : "Show this layer in OBS"}
+          title={
+            el.visible ? "Hide this layer from OBS" : "Show this layer in OBS"
+          }
           onClick={(e) => {
             e.stopPropagation();
             onToggleVisible(el.id);
@@ -1436,10 +1350,12 @@ function LiveCursors({
   cursors,
   pan,
   zoom,
+  large = false,
 }: {
   cursors: Map<string, CursorPayload>;
   pan: { x: number; y: number };
   zoom: number;
+  large?: boolean;
 }) {
   return (
     <>
@@ -1455,37 +1371,54 @@ function LiveCursors({
             transition: "left 60ms linear, top 60ms linear",
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 20 20">
+          <svg
+            width={large ? 32 : 18}
+            height={large ? 32 : 18}
+            viewBox="0 0 20 20"
+            style={{
+              display: "block",
+              filter: large
+                ? "drop-shadow(0 2px 3px rgba(0,0,0,.8))"
+                : undefined,
+            }}
+          >
             <path
               d="M4 2L16 10L10 11L7 18L4 2Z"
               fill={c.color}
               stroke="white"
-              strokeWidth="1.5"
+              strokeWidth={large ? "2" : "1.5"}
             />
           </svg>
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: large ? 7 : 4,
               background: c.color,
-              borderRadius: 4,
-              padding: "2px 6px",
+              borderRadius: large ? 7 : 4,
+              padding: large ? "5px 10px" : "2px 6px",
               whiteSpace: "nowrap",
-              marginTop: 2,
+              marginTop: large ? 3 : 2,
+              border: large ? "2px solid rgba(255,255,255,.85)" : undefined,
+              boxShadow: large ? "0 3px 8px rgba(0,0,0,.65)" : undefined,
             }}
           >
             <img
               src={c.avatar}
               alt=""
-              style={{ width: 14, height: 14, borderRadius: "50%" }}
+              style={{
+                width: large ? 24 : 14,
+                height: large ? 24 : 14,
+                borderRadius: "50%",
+              }}
             />
             <span
               style={{
-                fontSize: 11,
+                fontSize: large ? 18 : 11,
                 color: "#fff",
-                fontWeight: 600,
+                fontWeight: large ? 700 : 600,
                 fontFamily: "Inter, sans-serif",
+                textShadow: large ? "0 1px 2px rgba(0,0,0,.8)" : undefined,
               }}
             >
               {c.displayName}
@@ -1657,8 +1590,11 @@ export function CanvasStage({
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const twitchEmbedRef = useRef<HTMLDivElement>(null);
   const twitchPointerShieldRef = useRef<HTMLDivElement>(null);
-  const twitchPointerShieldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [twitchPointerShieldActive, setTwitchPointerShieldActive] = useState(false);
+  const twitchPointerShieldTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const [twitchPointerShieldActive, setTwitchPointerShieldActive] =
+    useState(false);
   const snapXGuideRef = useRef<HTMLDivElement>(null);
   const snapYGuideRef = useRef<HTMLDivElement>(null);
   const twitchInitedRef = useRef(false);
@@ -1685,7 +1621,8 @@ export function CanvasStage({
     const animateDvdElements = () => {
       const now = Date.now();
       for (const element of elementsRef.current) {
-        if (!element.dvdEnabled || draggingRef.current.has(element.id)) continue;
+        if (!element.dvdEnabled || draggingRef.current.has(element.id))
+          continue;
         const node = nodeMapRef.current.get(element.id);
         if (!node) continue;
         const position = getDvdPosition(element, now);
@@ -1881,6 +1818,11 @@ export function CanvasStage({
     }
 
     for (const el of elements) {
+      // Audio uploads previously inherited the old 16:9 video-player box.
+      // Compact those legacy elements once while preserving user-resized ones.
+      if (el.type === "audio" && el.width === 400 && el.height === 225) {
+        onElementChange(el.id, { width: 360, height: 86 });
+      }
       let node = nodeMap.get(el.id);
 
       if (!node) {
@@ -2456,11 +2398,25 @@ export interface OverlayStageHandle {
   applyControl: (payload: MediaControlPayload) => void;
 }
 
+interface CornerParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rotation: number;
+  spin: number;
+  size: number;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
 export const OverlayStage = forwardRef<
   OverlayStageHandle,
   {
     elements: CanvasElement[];
     cursors?: Map<string, CursorPayload>;
+    dvdCelebrationSettings?: DvdCelebrationSettings;
     strokes?: DrawStroke[];
     liveStrokes?: Map<
       string,
@@ -2472,7 +2428,36 @@ export const OverlayStage = forwardRef<
       }
     >;
   }
->(function OverlayStage({ elements, cursors = new Map(), strokes = [], liveStrokes }, ref) {
+>(function OverlayStage(
+  {
+    elements,
+    cursors = new Map(),
+    dvdCelebrationSettings = {
+      volume: 0.25,
+      soundUrl: null,
+      counterPosition: "top-right",
+    },
+    strokes = [],
+    liveStrokes,
+  },
+  ref,
+) {
+  const [cornerHitCount, setCornerHitCount] = useState(0);
+  const hasActiveDvd = elements.some(
+    (element) =>
+      element.dvdEnabled && element.visible && element.type !== "audio",
+  );
+  const counterAtTop = dvdCelebrationSettings.counterPosition.startsWith("top");
+  const counterAtCenter = dvdCelebrationSettings.counterPosition.endsWith("center");
+  const counterAtLeft = dvdCelebrationSettings.counterPosition.endsWith("left");
+  const counterLeft = counterAtCenter
+    ? "50%"
+    : counterAtLeft
+      ? "28px"
+      : "calc(100% - 28px)";
+  const counterTop = counterAtTop ? "28px" : "calc(100% - 28px)";
+  const counterTransform = `translate(${counterAtCenter ? "-50%" : counterAtLeft ? "0" : "-100%"}, ${counterAtTop ? "0" : "-100%"})`;
+  const hadActiveDvdRef = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const posMapRef = useRef<
@@ -2487,6 +2472,38 @@ export const OverlayStage = forwardRef<
   // Container for hidden audio elements
   const audioContainerRef = useRef<HTMLDivElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cornerFxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cornerParticlesRef = useRef<CornerParticle[]>([]);
+  const cornerAudioContextRef = useRef<AudioContext | null>(null);
+  const customCornerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const dvdCelebrationSettingsRef = useRef(dvdCelebrationSettings);
+  const dvdBounceStateRef = useRef<
+    Map<
+      string,
+      {
+        x: number;
+        y: number;
+        dx: number;
+        dy: number;
+        lastXBounce: number;
+        lastYBounce: number;
+        lastXEdge: "left" | "right";
+        lastYEdge: "top" | "bottom";
+        lastCelebration: number;
+      }
+    >
+  >(new Map());
+
+  useEffect(() => {
+    dvdCelebrationSettingsRef.current = dvdCelebrationSettings;
+  }, [dvdCelebrationSettings]);
+
+  useEffect(() => {
+    if (!hasActiveDvd && hadActiveDvdRef.current) {
+      setCornerHitCount(0);
+    }
+    hadActiveDvdRef.current = hasActiveDvd;
+  }, [hasActiveDvd]);
   // Offscreen layer holding committed strokes/fills already baked in, so an
   // expensive flood fill is never re-run just because a live stroke updated.
   const drawBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2501,12 +2518,63 @@ export const OverlayStage = forwardRef<
     const animateDvdElements = () => {
       const now = Date.now();
       for (const element of overlayElementsRef.current) {
-        if (!element.dvdEnabled || element.type === "audio") continue;
+        if (!element.dvdEnabled || !element.visible || element.type === "audio")
+          continue;
         const node = nodeMapRef.current.get(element.id);
         if (!node) continue;
         const position = getDvdPosition(element, now);
         const x = position.x - STREAM_OFFSET_X;
         const y = position.y - STREAM_OFFSET_Y;
+        const previous = dvdBounceStateRef.current.get(element.id);
+        if (previous) {
+          const dx = x - previous.x;
+          const dy = y - previous.y;
+          const bouncedX =
+            previous.dx !== 0 &&
+            dx !== 0 &&
+            Math.sign(previous.dx) !== Math.sign(dx);
+          const bouncedY =
+            previous.dy !== 0 &&
+            dy !== 0 &&
+            Math.sign(previous.dy) !== Math.sign(dy);
+          if (bouncedX) {
+            previous.lastXBounce = now;
+            previous.lastXEdge = previous.dx > 0 ? "right" : "left";
+          }
+          if (bouncedY) {
+            previous.lastYBounce = now;
+            previous.lastYEdge = previous.dy > 0 ? "bottom" : "top";
+          }
+          previous.x = x;
+          previous.y = y;
+          previous.dx = dx;
+          previous.dy = dy;
+
+          // Axis reflections can land on adjacent animation frames. Treat them
+          // as one genuine corner collision only when they occur within 50 ms.
+          if (
+            (bouncedX || bouncedY) &&
+            Math.abs(previous.lastXBounce - previous.lastYBounce) <= 50 &&
+            now - previous.lastCelebration > 1500
+          ) {
+            previous.lastCelebration = now;
+            const cornerX = previous.lastXEdge === "left" ? 0 : STREAM_W;
+            const cornerY = previous.lastYEdge === "top" ? 0 : STREAM_H;
+            spawnCornerCelebration(cornerX, cornerY);
+          }
+        } else {
+          dvdBounceStateRef.current.set(element.id, {
+            x,
+            y,
+            dx: 0,
+            dy: 0,
+            lastXBounce: -Infinity,
+            lastYBounce: Infinity,
+            lastXEdge: "left",
+            lastYEdge: "top",
+            lastCelebration: -Infinity,
+          });
+        }
         node.style.left = `${x}px`;
         node.style.top = `${y}px`;
         const current = posMapRef.current.get(element.id);
@@ -2515,9 +2583,128 @@ export const OverlayStage = forwardRef<
           current.y = y;
         }
       }
+      const activeIds = new Set(
+        overlayElementsRef.current
+          .filter((element) => element.dvdEnabled && element.visible)
+          .map((element) => element.id),
+      );
+      for (const id of dvdBounceStateRef.current.keys()) {
+        if (!activeIds.has(id)) dvdBounceStateRef.current.delete(id);
+      }
       frame = requestAnimationFrame(animateDvdElements);
     };
     frame = requestAnimationFrame(animateDvdElements);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  const spawnCornerCelebration = (cornerX: number, cornerY: number) => {
+    const settings = dvdCelebrationSettingsRef.current;
+    setCornerHitCount((count) => count + 1);
+    const colors = ["#fb923c", "#f97316", "#fdba74", "#facc15", "#ffffff"];
+    const directionX = cornerX === 0 ? 1 : -1;
+    const directionY = cornerY === 0 ? 1 : -1;
+    for (let index = 0; index < 90; index += 1) {
+      const life = 1.4 + Math.random() * 0.9;
+      cornerParticlesRef.current.push({
+        x: cornerX,
+        y: cornerY,
+        vx: directionX * (180 + Math.random() * 620),
+        vy:
+          directionY * (120 + Math.random() * 520) -
+          directionY * Math.random() * 220,
+        rotation: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 14,
+        size: 8 + Math.random() * 14,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        life,
+        maxLife: life,
+      });
+    }
+
+    if (settings.volume <= 0) return;
+    if (settings.soundUrl) {
+      const audio =
+        customCornerAudioRef.current ?? new Audio(settings.soundUrl);
+      if (audio.src !== settings.soundUrl) {
+        audio.src = settings.soundUrl;
+      }
+      customCornerAudioRef.current = audio;
+      audio.volume = settings.volume;
+      audio.currentTime = 0;
+      void audio.play().catch(() => {});
+      return;
+    }
+
+    try {
+      const AudioContextClass = window.AudioContext;
+      const audioContext =
+        cornerAudioContextRef.current ?? new AudioContextClass();
+      cornerAudioContextRef.current = audioContext;
+      void audioContext.resume().then(() => {
+        const start = audioContext.currentTime;
+        [659.25, 783.99, 1046.5].forEach((frequency, index) => {
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.type = "triangle";
+          oscillator.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, start + index * 0.07);
+          gain.gain.exponentialRampToValueAtTime(
+            Math.max(0.0001, 0.24 * settings.volume),
+            start + index * 0.07 + 0.015,
+          );
+          gain.gain.exponentialRampToValueAtTime(
+            0.0001,
+            start + index * 0.07 + 0.28,
+          );
+          oscillator.connect(gain).connect(audioContext.destination);
+          oscillator.start(start + index * 0.07);
+          oscillator.stop(start + index * 0.07 + 0.3);
+        });
+      });
+    } catch {
+      // OBS/browser autoplay policy may suppress synthesized audio; confetti
+      // still renders even when audio output is unavailable.
+    }
+  };
+
+  useEffect(() => {
+    let frame = 0;
+    let previousTime = performance.now();
+    const renderParticles = (time: number) => {
+      const canvas = cornerFxCanvasRef.current;
+      const context = canvas?.getContext("2d");
+      const dt = Math.min(0.033, (time - previousTime) / 1000);
+      previousTime = time;
+      context?.clearRect(0, 0, STREAM_W, STREAM_H);
+      const particles = cornerParticlesRef.current;
+      for (let index = particles.length - 1; index >= 0; index -= 1) {
+        const particle = particles[index];
+        particle.life -= dt;
+        if (particle.life <= 0) {
+          particles.splice(index, 1);
+          continue;
+        }
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.vy += 520 * dt;
+        particle.rotation += particle.spin * dt;
+        if (!context) continue;
+        context.save();
+        context.globalAlpha = Math.min(1, particle.life / 0.35);
+        context.translate(particle.x, particle.y);
+        context.rotate(particle.rotation);
+        context.fillStyle = particle.color;
+        context.fillRect(
+          -particle.size / 2,
+          -particle.size / 3,
+          particle.size,
+          particle.size * 0.66,
+        );
+        context.restore();
+      }
+      frame = requestAnimationFrame(renderParticles);
+    };
+    frame = requestAnimationFrame(renderParticles);
     return () => cancelAnimationFrame(frame);
   }, []);
 
@@ -2709,11 +2896,38 @@ export const OverlayStage = forwardRef<
         rotation: el.rotation ?? 0,
       });
 
+      // DVD motion already supplies a continuous position every animation
+      // frame. Applying the remote-drag lerp as well makes the rendered node
+      // lag behind the mathematical path and visually reverse before reaching
+      // an edge.
+      if (el.dvdEnabled) {
+        const dvdPosition = getDvdPosition(el);
+        const dvdX = dvdPosition.x - STREAM_OFFSET_X;
+        const dvdY = dvdPosition.y - STREAM_OFFSET_Y;
+        const current = posMap.get(el.id);
+        if (current) {
+          current.x = dvdX;
+          current.y = dvdY;
+          current.rotation = 0;
+        }
+        targetMap.set(el.id, { x: dvdX, y: dvdY, rotation: 0 });
+        node.style.left = `${dvdX}px`;
+        node.style.top = `${dvdY}px`;
+        continue;
+      }
+
       if (!animating.has(el.id)) {
         animating.add(el.id);
         const id = el.id;
         const FACTOR = 0.18;
         const animate = () => {
+          const latestElement = overlayElementsRef.current.find(
+            (candidate) => candidate.id === id,
+          );
+          if (latestElement?.dvdEnabled) {
+            animating.delete(id);
+            return;
+          }
           const pos = posMap.get(id),
             target = targetMap.get(id),
             n = nodeMap.get(id);
@@ -2779,6 +2993,61 @@ export const OverlayStage = forwardRef<
         cursors={cursors}
         pan={{ x: -STREAM_OFFSET_X, y: -STREAM_OFFSET_Y }}
         zoom={1}
+        large
+      />
+      {hasActiveDvd && (
+        <div
+          style={{
+            position: "absolute",
+            top: counterTop,
+            left: counterLeft,
+            transform: counterTransform,
+            transition:
+              "top 480ms cubic-bezier(.22,1,.36,1), left 480ms cubic-bezier(.22,1,.36,1), transform 480ms cubic-bezier(.22,1,.36,1)",
+            zIndex: 1900,
+            display: "flex",
+            alignItems: "center",
+            width: "max-content",
+            whiteSpace: "nowrap",
+            gap: 10,
+            padding: "10px 16px",
+            borderRadius: 10,
+            color: "#fff7ed",
+            background: "rgba(24,18,15,.88)",
+            border: "2px solid #f97316",
+            boxShadow:
+              "0 5px 18px rgba(0,0,0,.55), 0 0 16px rgba(249,115,22,.22)",
+            font: "700 22px Inter,sans-serif",
+            letterSpacing: "0.03em",
+            pointerEvents: "none",
+          }}
+        >
+          <span>CORNER HITS</span>
+          <span
+            style={{
+              minWidth: 34,
+              textAlign: "center",
+              padding: "3px 8px",
+              borderRadius: 7,
+              background: "#f97316",
+              color: "#fff",
+              fontSize: 24,
+            }}
+          >
+            {cornerHitCount}
+          </span>
+        </div>
+      )}
+      <canvas
+        ref={cornerFxCanvasRef}
+        width={STREAM_W}
+        height={STREAM_H}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 2000,
+        }}
       />
       {/* Hidden audio container */}
       <div ref={audioContainerRef} style={{ display: "none" }} />

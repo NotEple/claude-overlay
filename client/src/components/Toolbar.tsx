@@ -6,6 +6,7 @@ import type { TextConfig } from "./TextDialog";
 import type { CanvasElement, MediaType } from "../types";
 import { authHeaders } from "../hooks/useAuth";
 import type { DrawToolMode } from "./DrawingCanvas";
+import { useToast } from "./ToastProvider";
 import {
   Pencil,
   X,
@@ -113,13 +114,12 @@ export function Toolbar({
   const fileRef = useRef<HTMLInputElement>(null);
   const [showTextDialog, setShowTextDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    setError(null);
     const visualSizePromise = getVisualMediaSize(file).catch(() => null);
     const body = new FormData();
     body.append("file", file);
@@ -146,16 +146,17 @@ export function Toolbar({
         src: `${SERVER_URL}${url}`,
         x: 200,
         y: 200,
-        width: visualSize?.width ?? 400,
-        height: visualSize?.height ?? 225,
+        width: type === "audio" ? 360 : (visualSize?.width ?? 400),
+        height: type === "audio" ? 86 : (visualSize?.height ?? 225),
         rotation: 0,
         scaleX: 1,
         scaleY: 1,
         visible: true,
         zIndex: Date.now(),
       });
+      toast.success(`${file.name} added to the canvas`);
     } catch {
-      setError("Upload failed — is the server running?");
+      toast.error("Media upload failed. Check that the server is running and the file type is supported.");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -178,6 +179,7 @@ export function Toolbar({
       zIndex: Date.now(),
     });
     setShowTextDialog(false);
+    toast.success("Text element added to the canvas");
   };
 
   const toolBtn = (label: ReactNode, mode: DrawToolMode, title: string) => (
@@ -483,17 +485,6 @@ export function Toolbar({
           </>
         )}
 
-        {error && (
-          <span
-            style={{
-              fontSize: 11,
-              color: "#f87171",
-              fontFamily: "Inter, sans-serif",
-            }}
-          >
-            {error}
-          </span>
-        )}
       </div>
 
       {showTextDialog && (

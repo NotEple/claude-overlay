@@ -27,6 +27,11 @@ export interface CanvasElement {
 }
 
 export interface CanvasState { elements: CanvasElement[]; }
+export interface DvdCelebrationSettings {
+  volume: number;
+  soundUrl: string | null;
+  counterPosition: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+}
 export interface ElementAddedPayload { element: CanvasElement; }
 export interface ElementUpdatedPayload { id: string; changes: Partial<CanvasElement>; }
 export interface ElementRemovedPayload { id: string; }
@@ -90,6 +95,7 @@ export interface ServerToClientEvents {
   'draw:clear': () => void;
   'draw:sync': (strokes: DrawStroke[]) => void;
   'draw:live': (stroke: LiveDrawStroke) => void;
+  'dvd:settings': (settings: DvdCelebrationSettings) => void;
 }
 
 export interface ClientToServerEvents {
@@ -102,4 +108,5 @@ export interface ClientToServerEvents {
   'draw:stroke': (stroke: DrawStroke) => void;
   'draw:clear': () => void;
   'draw:live': (stroke: Omit<LiveDrawStroke, 'userId'>) => void;
+  'dvd:settings': (settings: DvdCelebrationSettings) => void;
 }

@@ -55,14 +55,14 @@ export function createDvdMotion(element: CanvasElement, now = Date.now()) {
   } satisfies Partial<CanvasElement>;
 }
 
+function randomBetween(min: number, max: number) {
+  return max <= min ? min : min + Math.random() * (max - min);
+}
+
 function reflect(value: number, min: number, max: number) {
   const range = max - min;
   if (range <= 0) return min;
   const period = range * 2;
   const wrapped = ((value - min) % period + period) % period;
   return min + (wrapped <= range ? wrapped : period - wrapped);
-}
-
-function randomBetween(min: number, max: number) {
-  return max <= min ? min : min + Math.random() * (max - min);
 }

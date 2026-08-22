@@ -22,6 +22,7 @@ import type { AuthUser } from "../hooks/useAuth";
 import { authHeaders } from "../hooks/useAuth";
 import type { CanvasElement, MediaControlPayload } from "../types";
 import { RotateCcw, Settings } from "lucide-react";
+import { useToast } from "../components/ToastProvider";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 type DashboardTheme = "fox" | "indigo";
@@ -40,6 +41,7 @@ export function Dashboard({
   onSessionRevoked,
   onRoleUpdated,
 }: DashboardProps) {
+  const toast = useToast();
   const dashboardControlRef = useRef<
     ((payload: MediaControlPayload) => void) | null
   >(null);
@@ -63,6 +65,8 @@ export function Dashboard({
     activeUsers,
     showCursorOnOverlay,
     setShowCursorOnOverlay,
+    dvdCelebrationSettings,
+    setDvdCelebrationSettings,
     strokes,
     liveStrokes,
     addElement,
@@ -94,6 +98,7 @@ export function Dashboard({
     "vicksy",
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [dvdSoundUploading, setDvdSoundUploading] = useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = useState(false);
   const [theme, setTheme] = useState<DashboardTheme>(() =>
     localStorage.getItem(THEME_STORAGE_KEY) === "indigo" ? "indigo" : "fox",
@@ -102,6 +107,38 @@ export function Dashboard({
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  const handleDvdSoundUpload = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      setDvdSoundUploading(true);
+      try {
+        const body = new FormData();
+        body.append("file", file);
+        const response = await fetch(`${SERVER_URL}/upload`, {
+          method: "POST",
+          body,
+          credentials: "include",
+          headers: authHeaders(),
+        });
+        if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+        const { url } = await response.json();
+        setDvdCelebrationSettings({
+          ...dvdCelebrationSettings,
+          soundUrl: `${SERVER_URL}${url}`,
+        });
+        toast.success(`${file.name} is now the DVD corner sound`);
+      } catch (error) {
+        console.error("DVD celebration sound upload failed", error);
+        toast.error("DVD sound upload failed. Use an MP3, WAV, OGG, or WebM audio file.");
+      } finally {
+        setDvdSoundUploading(false);
+        event.target.value = "";
+      }
+    },
+    [dvdCelebrationSettings, setDvdCelebrationSettings, toast],
+  );
 
   const handleSelect = useCallback(
     (id: string | null, multi = false) => {
@@ -268,11 +305,13 @@ export function Dashboard({
         zIndex: Date.now(),
       });
       clearStrokes();
+      toast.success("Drawing saved as a canvas element");
     } catch (error) {
       console.error("Could not convert drawing to an element:", error);
+      toast.error("Could not save the drawing as an element. Your drawing was kept.");
       // Keep the strokes intact so a temporary upload failure never destroys work.
     }
-  }, [strokes, addElement, clearStrokes]);
+  }, [strokes, addElement, clearStrokes, toast]);
 
   const isAdmin = user.isOwner || user.isAdmin;
 
@@ -380,7 +419,10 @@ export function Dashboard({
           </button>
           <button
             className="ui-button"
-            onClick={refreshOverlay}
+            onClick={() => {
+              refreshOverlay();
+              toast.success("OBS overlay refresh requested");
+            }}
             style={{
               background: "none",
               border: "1px solid #444",
@@ -410,7 +452,10 @@ export function Dashboard({
         onDrawSizeChange={setDrawSize}
         toolMode={toolMode}
         onToolModeChange={setToolMode}
-        onDrawClear={clearStrokes}
+        onDrawClear={() => {
+          clearStrokes();
+          toast.success("Drawing cleared");
+        }}
         onSaveDrawingAsElement={handleSaveDrawingAsElement}
         hasStrokes={strokes.length > 0}
       />
@@ -671,10 +716,167 @@ export function Dashboard({
                       </button>
                     ))}
                   </div>
+                  <div
+                    style={{
+                      padding: "7px 4px 5px",
+                      marginBottom: 7,
+                      borderTop: "1px solid #2a2a2a",
+                      borderBottom: "1px solid #2a2a2a",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#a3aab5",
+                        fontSize: 9,
+                        letterSpacing: "0.08em",
+                        marginBottom: 7,
+                      }}
+                    >
+                      DVD CORNER SOUND
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        marginBottom: 7,
+                        color: "#b6beca",
+                        fontSize: 10,
+                      }}
+                    >
+                      <span>Volume</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={dvdCelebrationSettings.volume}
+                        onChange={(event) =>
+                          setDvdCelebrationSettings({
+                            ...dvdCelebrationSettings,
+                            volume: Number(event.target.value),
+                          })
+                        }
+                        title="Set the DVD corner celebration sound volume"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          accentColor: "var(--accent-border)",
+                        }}
+                      />
+                      <span style={{ width: 30, textAlign: "right" }}>
+                        {Math.round(dvdCelebrationSettings.volume * 100)}%
+                      </span>
+                    </div>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        marginBottom: 7,
+                        color: "#b6beca",
+                        fontSize: 10,
+                      }}
+                    >
+                      <span>Counter</span>
+                      <select
+                        value={dvdCelebrationSettings.counterPosition}
+                        onChange={(event) => {
+                          const counterPosition = event.target.value as typeof dvdCelebrationSettings.counterPosition;
+                          setDvdCelebrationSettings({
+                            ...dvdCelebrationSettings,
+                            counterPosition,
+                          });
+                          toast.success(
+                            `DVD counter moved to ${event.target.options[event.target.selectedIndex].text.toLowerCase()}`,
+                          );
+                        }}
+                        title="Choose where the DVD corner counter appears on OBS"
+                        style={{
+                          flex: 1,
+                          height: 28,
+                          padding: "0 7px",
+                          borderRadius: 4,
+                          border: "1px solid #3a3a3f",
+                          background: "#202020",
+                          color: "#d1d5db",
+                          font: "600 10px Inter,sans-serif",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <option value="top-left">Top left</option>
+                        <option value="top-center">Top center</option>
+                        <option value="top-right">Top right</option>
+                        <option value="bottom-left">Bottom left</option>
+                        <option value="bottom-center">Bottom center</option>
+                        <option value="bottom-right">Bottom right</option>
+                      </select>
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+                      <label
+                        className="ui-button ui-button--compact"
+                        title="Upload an audio file for DVD corner celebrations"
+                        style={{
+                          minWidth: 0,
+                          cursor: dvdSoundUploading ? "wait" : "pointer",
+                          background: dvdCelebrationSettings.soundUrl
+                            ? "var(--accent-surface-strong)"
+                            : "#202020",
+                          border: dvdCelebrationSettings.soundUrl
+                            ? "1px solid var(--accent-border)"
+                            : "1px solid #333",
+                          color: "#d1d5db",
+                        }}
+                      >
+                        {dvdSoundUploading
+                          ? "Uploading…"
+                          : dvdCelebrationSettings.soundUrl
+                            ? "Replace sound"
+                            : "Upload sound"}
+                        <input
+                          type="file"
+                          accept="audio/mpeg,audio/wav,audio/ogg,audio/webm"
+                          disabled={dvdSoundUploading}
+                          onChange={handleDvdSoundUpload}
+                          style={{ display: "none" }}
+                        />
+                      </label>
+                      <button
+                        className="ui-button ui-button--compact"
+                        onClick={() =>
+                          {
+                            setDvdCelebrationSettings({
+                              ...dvdCelebrationSettings,
+                              soundUrl: null,
+                            });
+                            toast.success("Using the built-in DVD corner chime");
+                          }
+                        }
+                        disabled={!dvdCelebrationSettings.soundUrl}
+                        title="Use the built-in three-note corner chime"
+                        style={{
+                          minWidth: 0,
+                          background: dvdCelebrationSettings.soundUrl ? "#202020" : "var(--accent-surface-strong)",
+                          border: dvdCelebrationSettings.soundUrl ? "1px solid #333" : "1px solid var(--accent-border)",
+                          color: dvdCelebrationSettings.soundUrl ? "#b6beca" : "var(--accent-text)",
+                        }}
+                      >
+                        Built-in chime
+                      </button>
+                    </div>
+                  </div>
                   <div style={{ display: "grid", gap: 7 }}>
                     <button
                       className="ui-button ui-button--compact"
-                      onClick={() => setShowCursorOnOverlay(!showCursorOnOverlay)}
+                      onClick={() => {
+                        const visible = !showCursorOnOverlay;
+                        setShowCursorOnOverlay(visible);
+                        toast.success(
+                          visible
+                            ? "Your cursor is now visible on OBS"
+                            : "Your cursor is now hidden from OBS",
+                        );
+                      }}
                       title="Choose whether your cursor is visible on the OBS stream overlay; dashboard users always see it"
                       aria-pressed={showCursorOnOverlay}
                       style={{

@@ -4,10 +4,15 @@ import { Dashboard } from "./views/Dashboard";
 import { Overlay } from "./views/Overlay";
 import { LoginPage } from "./views/LoginPage";
 import TileController from "./components/TileController";
+import { ToastProvider } from "./components/ToastProvider";
 
 export default function App() {
   if (window.location.pathname === "/overlay") return <Overlay />;
-  return <DashboardApp />;
+  return (
+    <ToastProvider>
+      <DashboardApp />
+    </ToastProvider>
+  );
 }
 
 function DashboardApp() {

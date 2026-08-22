@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type React from 'react';
 import { io, Socket } from 'socket.io-client';
 import type {
-  CanvasElement, CursorPayload, UserPresencePayload, MediaControlPayload, DrawStroke, LiveDrawStroke,
+  CanvasElement, CursorPayload, UserPresencePayload, MediaControlPayload, DrawStroke, LiveDrawStroke, DvdCelebrationSettings,
   ServerToClientEvents, ClientToServerEvents,
 } from '../types';
 import { getAuthToken } from './useAuth';
+import { useToast } from '../components/ToastProvider';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -20,6 +21,7 @@ interface UseSocketOptions {
 }
 
 export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated, onMediaControl, onOverlayRefresh, directUpdateRef }: UseSocketOptions = {}) {
+  const toast = useToast();
   const socketRef = useRef<AppSocket | null>(null);
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [connected, setConnected] = useState(false);
@@ -32,6 +34,12 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   );
   const [strokes, setStrokes] = useState<DrawStroke[]>([]);
   const [liveStrokes, setLiveStrokes] = useState<Map<string, LiveDrawStroke>>(new Map());
+  const [dvdCelebrationSettings, setDvdCelebrationSettingsState] =
+    useState<DvdCelebrationSettings>({
+      volume: 0.25,
+      soundUrl: null,
+      counterPosition: 'top-right',
+    });
 
   // Use refs for callbacks so the socket listener closure always has the latest version
   const onRoleUpdatedRef = useRef(onRoleUpdated);
@@ -44,6 +52,8 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   const pendingCursors = useRef<Map<string, CursorPayload>>(new Map());
   const cursorExpiryTimers = useRef<Map<string, number>>(new Map());
   const rafRef = useRef(0);
+  const connectedOnceRef = useRef(false);
+  const lastConnectionToastRef = useRef(0);
 
   useEffect(() => {
     const socket: AppSocket = io(SERVER_URL, {
@@ -54,9 +64,25 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
     });
     socketRef.current = socket;
 
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', (err) => console.error('Socket connect error:', err.message));
+    socket.on('connect', () => {
+      setConnected(true);
+      if (mode === 'dashboard' && connectedOnceRef.current) toast.success('Reconnected to the dashboard server');
+      connectedOnceRef.current = true;
+    });
+    socket.on('disconnect', () => {
+      setConnected(false);
+      if (mode === 'dashboard') {
+        lastConnectionToastRef.current = Date.now();
+        toast.error('Disconnected from the dashboard server. Reconnecting…');
+      }
+    });
+    socket.on('connect_error', (err) => {
+      console.error('Socket connect error:', err.message);
+      if (mode === 'dashboard' && Date.now() - lastConnectionToastRef.current > 8000) {
+        lastConnectionToastRef.current = Date.now();
+        toast.error(`Could not connect to the dashboard server: ${err.message}`);
+      }
+    });
     socket.on('overlay:status', ({ connected: online, count }) => {
       setOverlayConnected(online);
       setOverlayCount(count);
@@ -131,6 +157,7 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
         return next;
       });
     });
+    socket.on('dvd:settings', setDvdCelebrationSettingsState);
 
     // rAF loop — flush pending element and cursor updates once per frame
     const flushLoop = () => {
@@ -213,6 +240,10 @@ export function useSocket({ mode = 'dashboard', onSessionRevoked, onRoleUpdated,
   const sendLiveStroke = useCallback((data: Omit<LiveDrawStroke, 'userId'>) => {
     socketRef.current?.volatile.emit('draw:live', data);
   }, []);
+  const setDvdCelebrationSettings = useCallback((settings: DvdCelebrationSettings) => {
+    setDvdCelebrationSettingsState(settings);
+    socketRef.current?.emit('dvd:settings', settings);
+  }, []);
 
-  return { elements, connected, overlayConnected, overlayCount, cursors, activeUsers, showCursorOnOverlay, setShowCursorOnOverlay, strokes, liveStrokes, addElement, updateElement, removeElement, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
+  return { elements, connected, overlayConnected, overlayCount, cursors, activeUsers, showCursorOnOverlay, setShowCursorOnOverlay, dvdCelebrationSettings, setDvdCelebrationSettings, strokes, liveStrokes, addElement, updateElement, removeElement, sendCursor, emitMediaControl, refreshOverlay, addStroke, clearStrokes, sendLiveStroke };
 }

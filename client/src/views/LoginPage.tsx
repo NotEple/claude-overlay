@@ -12,6 +12,11 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export function LoginPage({ onLogin, error }: LoginPageProps) {
+  const toast = useToast();
+  useEffect(() => {
+    if (error) toast.error(ERROR_MESSAGES[error] ?? 'Something went wrong.');
+  }, [error, toast]);
+
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="flex flex-col items-center gap-6 text-center">
@@ -22,12 +27,6 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
           <h1 className="text-2xl font-semibold text-white">OBS Overlay</h1>
           <p className="text-gray-400 text-sm mt-1">Sign in with Twitch to continue</p>
         </div>
-
-        {error && (
-          <p className="text-red-400 text-sm bg-red-950 border border-red-800 rounded-md px-4 py-2 max-w-xs">
-            {ERROR_MESSAGES[error] ?? 'Something went wrong.'}
-          </p>
-        )}
 
         <button
           onClick={onLogin}
@@ -49,3 +48,5 @@ function TwitchIcon() {
     </svg>
   );
 }
+import { useEffect } from "react";
+import { useToast } from "../components/ToastProvider";

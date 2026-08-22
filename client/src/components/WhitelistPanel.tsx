@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Star, X } from 'lucide-react';
 import { authHeaders } from '../hooks/useAuth';
+import { useToast } from './ToastProvider';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
 
@@ -20,12 +21,15 @@ interface WhitelistPanelProps {
 export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProps) {
   const [list, setList] = useState<WhitelistEntry[]>([]);
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const toast = useToast();
 
   const fetchList = async () => {
-    const res = await fetch(`${SERVER_URL}/whitelist`, { credentials: 'include', headers: authHeaders() });
-    if (res.ok) setList(await res.json());
+    try {
+      const res = await fetch(`${SERVER_URL}/whitelist`, { credentials: 'include', headers: authHeaders() });
+      if (res.ok) setList(await res.json());
+      else toast.error('Could not load the whitelist');
+    } catch { toast.error('Could not reach the server to load the whitelist'); }
   };
 
   useEffect(() => { fetchList(); }, []);
@@ -33,30 +37,40 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
   const handleAdd = async () => {
     const username = input.trim().toLowerCase();
     if (!username) return;
-    setLoading(true); setStatus(null);
-    const res = await fetch(`${SERVER_URL}/whitelist`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ username }),
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) { setStatus({ type: 'error', message: data.error }); }
-    else { setStatus({ type: 'success', message: `Added ${data.displayName}` }); setInput(''); fetchList(); }
+    setLoading(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/whitelist`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Could not add that user'); }
+      else { toast.success(`Added ${data.displayName} to the whitelist`); setInput(''); fetchList(); }
+    } catch { toast.error('Could not reach the server to add that user'); }
+    finally { setLoading(false); }
   };
 
   const handleRemove = async (username: string) => {
-    await fetch(`${SERVER_URL}/whitelist/${username}`, { method: 'DELETE', credentials: 'include', headers: authHeaders() });
-    fetchList();
+    try {
+      const response = await fetch(`${SERVER_URL}/whitelist/${username}`, { method: 'DELETE', credentials: 'include', headers: authHeaders() });
+      if (!response.ok) { toast.error(`Could not remove ${username}`); return; }
+      toast.success(`Removed ${username} from the whitelist`);
+      fetchList();
+    } catch { toast.error(`Could not reach the server to remove ${username}`); }
   };
 
   const handleToggleAdmin = async (username: string, isAdmin: boolean) => {
-    await fetch(`${SERVER_URL}/whitelist/${username}/admin`, {
-      method: 'PATCH', credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ isAdmin: !isAdmin }),
-    });
-    fetchList();
+    try {
+      const response = await fetch(`${SERVER_URL}/whitelist/${username}/admin`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ isAdmin: !isAdmin }),
+      });
+      if (!response.ok) { toast.error(`Could not update ${username}'s admin access`); return; }
+      toast.success(`${username} is ${isAdmin ? 'no longer an admin' : 'now an admin'}`);
+      fetchList();
+    } catch { toast.error(`Could not reach the server to update ${username}`); }
   };
 
   return (
@@ -78,7 +92,6 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
                 {loading ? '…' : 'Add'}
               </button>
             </div>
-            {status && <p style={{ margin: '6px 0 0', fontSize: 11, color: status.type === 'error' ? '#f87171' : '#4ade80', fontFamily: 'Inter, sans-serif' }}>{status.message}</p>}
           </div>
         )}
 

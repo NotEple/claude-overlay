@@ -31,6 +31,7 @@ export function registerSocketHandlers(
   console.log(`Connected: ${user?.login ?? "overlay"} (${socket.id})`);
   socket.emit("state:sync", canvasState);
   socket.emit("draw:sync", drawStrokes);
+  socket.emit("dvd:settings", store.dvdCelebrationSettings);
   if (isOverlay) activeOverlays.add(socket.id);
   io.emit("overlay:status", {
     connected: activeOverlays.size > 0,
@@ -81,6 +82,31 @@ export function registerSocketHandlers(
     if (validMediaControl(payload)) socket.broadcast.emit("media:control", payload);
   });
   socket.on("overlay:refresh", () => io.emit("overlay:refresh"));
+  socket.on("dvd:settings", (settings) => {
+    if (
+      !Number.isFinite(settings.volume) ||
+      settings.volume < 0 ||
+      settings.volume > 1 ||
+      ![
+        "top-left",
+        "top-center",
+        "top-right",
+        "bottom-left",
+        "bottom-center",
+        "bottom-right",
+      ].includes(settings.counterPosition) ||
+      !(
+        settings.soundUrl === null ||
+        (typeof settings.soundUrl === "string" && settings.soundUrl.length <= 2048)
+      )
+    ) return;
+    store.dvdCelebrationSettings = {
+      volume: settings.volume,
+      soundUrl: settings.soundUrl,
+      counterPosition: settings.counterPosition,
+    };
+    io.emit("dvd:settings", store.dvdCelebrationSettings);
+  });
 
   socket.on("draw:stroke", (stroke) => {
     if (!validStroke(stroke) || drawStrokes.length >= MAX_STROKES) return;
