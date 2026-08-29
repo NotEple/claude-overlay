@@ -46,6 +46,9 @@ import {
   Maximize2,
   Expand,
   Disc,
+  FlipHorizontal2,
+  FlipVertical2,
+  RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -124,12 +127,17 @@ function addResizeHandle(
   btn.style.cssText = `
     position:absolute;${HANDLE_POSITIONS[pos]};
     width:10px;height:10px;background:white;border:1.5px solid var(--accent-border);
-    border-radius:2px;cursor:${HANDLE_CURSORS[pos]};z-index:20;display:none;
+    border-radius:2px;cursor:${HANDLE_CURSORS[pos]};z-index:20;display:none;touch-action:none;
   `;
 
-  btn.addEventListener("mousedown", (e) => {
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
+    // Keep all resize events targeted at this handle even when the pointer
+    // crosses Twitch's cross-origin iframe. Without capture, the iframe eats
+    // mousemove/mouseup and leaves the resize interaction stuck.
+    btn.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startY = e.clientY;
     const startW = container.offsetWidth;
@@ -138,7 +146,8 @@ function addResizeHandle(
     const startTop = parseFloat(container.style.top) || 0;
     let lastEmit = 0;
     let pendingChanges: Partial<CanvasElement> | null = null;
-    const onMove = (ev: MouseEvent) => {
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
       const zoom = getZoom();
       const dx = (ev.clientX - startX) / zoom;
       const dy = (ev.clientY - startY) / zoom;
@@ -231,13 +240,23 @@ function addResizeHandle(
       }
     };
 
-    const onUp = () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+    let finished = false;
+    const finish = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId || finished) return;
+      finished = true;
+      btn.removeEventListener("pointermove", onMove);
+      btn.removeEventListener("pointerup", finish);
+      btn.removeEventListener("pointercancel", finish);
+      btn.removeEventListener("lostpointercapture", finish);
       if (pendingChanges) onUpdate(pendingChanges);
+      if (btn.hasPointerCapture(e.pointerId)) {
+        btn.releasePointerCapture(e.pointerId);
+      }
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    btn.addEventListener("pointermove", onMove);
+    btn.addEventListener("pointerup", finish);
+    btn.addEventListener("pointercancel", finish);
+    btn.addEventListener("lostpointercapture", finish);
   });
 
   container.appendChild(btn);
@@ -572,7 +591,7 @@ function createMediaElement(
     // the player controls or changing the OBS-rendered video.
     video.controls = true;
     video.style.cssText =
-      "width:100%;height:100%;object-fit:contain;display:block;background:#000;";
+      "width:100%;height:100%;object-fit:contain;display:block;background:transparent;";
 
     if (onVisibilityChange) {
       video.addEventListener("play", () => onVisibilityChange(true));
@@ -587,13 +606,18 @@ function createMediaElement(
         video.currentTime = el.mediaCurrentTime;
       }
     });
-    video.addEventListener("volumechange", () =>
-      onVolumeChange?.(video.volume),
-    );
+    video.addEventListener("volumechange", () => {
+      const remoteTarget = (video as any).__remoteVolumeTarget;
+      if (typeof remoteTarget === "number" && Math.abs(video.volume - remoteTarget) < 0.001) {
+        delete (video as any).__remoteVolumeTarget;
+        return;
+      }
+      onVolumeChange?.(video.volume);
+    });
 
     const wrap = document.createElement("div");
     wrap.style.cssText =
-      "position:relative;width:100%;height:100%;background:#000;overflow:hidden;";
+      "position:relative;width:100%;height:100%;background:transparent;overflow:hidden;";
     wrap.appendChild(video);
 
     const dragHandle = document.createElement("div");
@@ -642,9 +666,14 @@ function createMediaElement(
     }
 
     if (onMediaEvent) attachMediaListeners(audio, onMediaEvent, true);
-    audio.addEventListener("volumechange", () =>
-      onVolumeChange?.(audio.volume),
-    );
+    audio.addEventListener("volumechange", () => {
+      const remoteTarget = (audio as any).__remoteVolumeTarget;
+      if (typeof remoteTarget === "number" && Math.abs(audio.volume - remoteTarget) < 0.001) {
+        delete (audio as any).__remoteVolumeTarget;
+        return;
+      }
+      onVolumeChange?.(audio.volume);
+    });
     onMediaReady?.(audio);
 
     const wrap = document.createElement("div");
@@ -849,6 +878,14 @@ export function ElementPanel({
       )
     : 0;
 
+  const canFlipSelected = selectedElement && ["image", "gif", "video"].includes(selectedElement.type);
+  const flipSelected = (axis: "x" | "y") => {
+    if (!selectedElement || !canFlipSelected) return;
+    onElementChange(selectedElement.id, axis === "x"
+      ? { scaleX: -(selectedElement.scaleX ?? 1) }
+      : { scaleY: -(selectedElement.scaleY ?? 1) });
+  };
+
   const moveSlot = (idx: number, dir: "up" | "down") => {
     const arr = [...slots];
     const to = dir === "up" ? idx - 1 : idx + 1;
@@ -1038,7 +1075,7 @@ export function ElementPanel({
   return (
     <div
       style={{
-        width: 220,
+        width: "var(--sidebar-width)",
         background: "#111",
         borderRight: "1px solid #222",
         display: "flex",
@@ -1062,7 +1099,7 @@ export function ElementPanel({
         }}
       >
         <span>LAYERS</span>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 4 }}>
           {selectedElement && (
             <>
               <button
@@ -1133,6 +1170,12 @@ export function ElementPanel({
                 >
                   <Disc size={11} /> DVD
                 </button>
+              )}
+              {canFlipSelected && (
+                <>
+                  <button className="ui-icon-button ui-button--compact" onClick={() => flipSelected("x")} title="Flip selected media left to right" style={{ background: "#1e2030", border: "1px solid #334", color: "var(--accent-text)", cursor: "pointer" }}><FlipHorizontal2 size={12} /></button>
+                  <button className="ui-icon-button ui-button--compact" onClick={() => flipSelected("y")} title="Flip selected media top to bottom" style={{ background: "#1e2030", border: "1px solid #334", color: "var(--accent-text)", cursor: "pointer" }}><FlipVertical2 size={12} /></button>
+                </>
               )}
             </>
           )}
@@ -1587,6 +1630,7 @@ export function CanvasStage({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
+  const volumeCommitTimersRef = useRef<Map<string, number>>(new Map());
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const twitchEmbedRef = useRef<HTMLDivElement>(null);
   const twitchPointerShieldRef = useRef<HTMLDivElement>(null);
@@ -1595,10 +1639,15 @@ export function CanvasStage({
   > | null>(null);
   const [twitchPointerShieldActive, setTwitchPointerShieldActive] =
     useState(false);
+  const [twitchNeedsReconnect, setTwitchNeedsReconnect] = useState(false);
+  const [twitchPlayerGeneration, setTwitchPlayerGeneration] = useState(0);
   const snapXGuideRef = useRef<HTMLDivElement>(null);
   const snapYGuideRef = useRef<HTMLDivElement>(null);
   const twitchInitedRef = useRef(false);
   const twitchPlayerRef = useRef<any>(null);
+  const twitchHasPlayedRef = useRef(false);
+  const twitchSessionRef = useRef(0);
+  const twitchNeedsReconnectRef = useRef(false);
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
   const [panState, setPanState] = useState({ x: 0, y: 0 });
@@ -1615,6 +1664,10 @@ export function CanvasStage({
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
+
+  useEffect(() => {
+    twitchNeedsReconnectRef.current = twitchNeedsReconnect;
+  }, [twitchNeedsReconnect]);
 
   useEffect(() => {
     let frame = 0;
@@ -1838,8 +1891,14 @@ export function CanvasStage({
                   onMediaControl(el.id, action, currentTime)
               : undefined,
             onMediaReady: (media) => mediaElMap.set(el.id, media),
-            onVolumeChange: (vol) =>
-              onElementChange(el.id, { mediaVolume: vol }),
+            onVolumeChange: (vol) => {
+              const existing = volumeCommitTimersRef.current.get(el.id);
+              if (existing !== undefined) window.clearTimeout(existing);
+              volumeCommitTimersRef.current.set(el.id, window.setTimeout(() => {
+                volumeCommitTimersRef.current.delete(el.id);
+                onElementChange(el.id, { mediaVolume: vol });
+              }, 100));
+            },
             onVisibilityChange: (visible) => {
               const current = elementsRef.current.find(
                 (element) => element.id === el.id,
@@ -2033,7 +2092,10 @@ export function CanvasStage({
       if (el.type === "video" || el.type === "audio") {
         const vol = el.mediaVolume ?? 0.25;
         const media = mediaElMapRef.current.get(el.id);
-        if (media && Math.abs(media.volume - vol) > 0.001) media.volume = vol;
+        if (media && Math.abs(media.volume - vol) > 0.001) {
+          (media as any).__remoteVolumeTarget = vol;
+          media.volume = vol;
+        }
         const slider = node.querySelector<HTMLInputElement>(
           "input[type=range][title='Volume']",
         );
@@ -2110,6 +2172,11 @@ export function CanvasStage({
     onMediaControl,
   ]);
 
+  useEffect(() => () => {
+    volumeCommitTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    volumeCommitTimersRef.current.clear();
+  }, []);
+
   // Expose applyControl for incoming remote media:control events
   useEffect(() => {
     if (!mediaControlRef) return;
@@ -2132,6 +2199,27 @@ export function CanvasStage({
       }
     };
   }, [mediaControlRef]);
+
+  const reconnectTwitchPlayer = useCallback(() => {
+    if (!showTwitchEmbed || !twitchChannel) return;
+
+    if (twitchPointerShieldTimerRef.current) {
+      clearTimeout(twitchPointerShieldTimerRef.current);
+      twitchPointerShieldTimerRef.current = null;
+    }
+    // Invalidate events from the old player before removing its iframe.
+    twitchSessionRef.current += 1;
+    setTwitchPointerShieldActive(false);
+    twitchNeedsReconnectRef.current = false;
+    setTwitchNeedsReconnect(false);
+    twitchHasPlayedRef.current = false;
+    twitchPlayerRef.current = null;
+    twitchInitedRef.current = false;
+    twitchEmbedRef.current
+      ?.querySelector("#twitch-player-container")
+      ?.replaceChildren();
+    setTwitchPlayerGeneration((generation) => generation + 1);
+  }, [showTwitchEmbed, twitchChannel]);
 
   // Twitch.Player — initialize once, then switch channels in the same player.
   useEffect(() => {
@@ -2157,6 +2245,7 @@ export function CanvasStage({
     const Twitch = (window as any).Twitch;
     if (!Twitch?.Player) return;
     twitchInitedRef.current = true;
+    const session = ++twitchSessionRef.current;
 
     const player = new Twitch.Player("twitch-player-container", {
       width: "100%",
@@ -2168,6 +2257,10 @@ export function CanvasStage({
     });
     twitchPlayerRef.current = player;
     player.addEventListener(Twitch.Player.PLAYING, () => {
+      if (session !== twitchSessionRef.current) return;
+      twitchHasPlayedRef.current = true;
+      twitchNeedsReconnectRef.current = false;
+      setTwitchNeedsReconnect(false);
       if (twitchPointerShieldTimerRef.current) {
         clearTimeout(twitchPointerShieldTimerRef.current);
       }
@@ -2177,12 +2270,18 @@ export function CanvasStage({
       }, 5000);
     });
     player.addEventListener(Twitch.Player.PAUSE, () => {
+      if (session !== twitchSessionRef.current) return;
       if (twitchPointerShieldTimerRef.current) {
         clearTimeout(twitchPointerShieldTimerRef.current);
         twitchPointerShieldTimerRef.current = null;
       }
+      setTwitchPointerShieldActive(false);
+      if (twitchHasPlayedRef.current) {
+        twitchNeedsReconnectRef.current = true;
+        setTwitchNeedsReconnect(true);
+      }
     });
-  }, [showTwitchEmbed, twitchChannel]);
+  }, [showTwitchEmbed, twitchChannel, twitchPlayerGeneration]);
 
   useEffect(
     () => () => {
@@ -2193,19 +2292,19 @@ export function CanvasStage({
     [],
   );
 
-  // Auto-resume when the tab regains visibility (browser pauses background tabs)
+  // Twitch may reject play() after a background-tab visibility pause. Rebuild
+  // only its player when the tab returns instead of refreshing the dashboard.
   useEffect(() => {
     const onVisible = () => {
-      const player = twitchPlayerRef.current;
-      if (player && showTwitchEmbed) {
-        try {
-          player.play();
-        } catch {}
-      }
+      if (
+        document.visibilityState === "visible" &&
+        twitchNeedsReconnectRef.current
+      )
+        reconnectTwitchPlayer();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [showTwitchEmbed]);
+  }, [reconnectTwitchPlayer]);
 
   const resetView = useCallback(() => {
     const w = wrapperRef.current?.clientWidth ?? 800;
@@ -2360,25 +2459,50 @@ export function CanvasStage({
           }}
         >
           Drag bg to pan · Middle mouse to pan · Scroll to zoom · Right-drag to
-          rotate · Dbl-click text to edit · Del to remove
+          rotate · Ctrl+C/V to copy/paste · Dbl-click text to edit · Del to remove
         </span>
-        <button
-          className="ui-button"
-          onClick={resetView}
-          title="Reset zoom and center the 1920×1080 stream area"
-          style={{
-            background: "rgba(0,0,0,0.7)",
-            color: "#aaa",
-            fontSize: 11,
-            pointerEvents: "all",
-            padding: "3px 8px",
-            borderRadius: 4,
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          {Math.round(zoomState * 100)}% · Fit
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {showTwitchEmbed && twitchNeedsReconnect && (
+            <button
+              className="ui-button"
+              onClick={reconnectTwitchPlayer}
+              title="Reload only the Twitch player after it was paused by browser visibility rules"
+              style={{
+                background: "var(--accent-solid)",
+                color: "var(--accent-contrast)",
+                fontSize: 11,
+                pointerEvents: "all",
+                padding: "3px 8px",
+                borderRadius: 4,
+                border: "1px solid var(--accent-border)",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <RefreshCw size={12} /> Reconnect stream
+            </button>
+          )}
+          <button
+            className="ui-button"
+            onClick={resetView}
+            title="Reset zoom and center the 1920×1080 stream area"
+            style={{
+              background: "rgba(0,0,0,0.7)",
+              color: "#aaa",
+              fontSize: 11,
+              pointerEvents: "all",
+              padding: "3px 8px",
+              borderRadius: 4,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            {Math.round(zoomState * 100)}% · Fit
+          </button>
+        </div>
       </div>
     </div>
   );

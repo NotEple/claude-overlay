@@ -76,7 +76,7 @@ export function TextDialog({ initial, onConfirm, onClose }: TextDialogProps) {
           <button className="ui-button" title="Close without saving text changes" onClick={onClose} style={{ padding: '7px 16px', background: '#222', border: '1px solid #333', borderRadius: 6, color: '#c4cad4', fontSize: 13, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Cancel</button>
           <button className="ui-button" title="Add this text to the overlay" onClick={() => { if (text.trim()) onConfirm({ text, color, fontSize, fontFamily }); }}
             disabled={!text.trim()}
-            style={{ padding: '7px 16px', background: text.trim() ? 'var(--accent-solid)' : '#333', border: 'none', borderRadius: 6, color: 'white', fontSize: 13, cursor: text.trim() ? 'pointer' : 'not-allowed', fontFamily: 'Inter, sans-serif' }}>
+            style={{ padding: '7px 16px', background: text.trim() ? 'var(--accent-solid)' : '#333', border: 'none', borderRadius: 6, color: text.trim() ? 'var(--accent-contrast)' : '#aaa', fontSize: 13, cursor: text.trim() ? 'pointer' : 'not-allowed', fontFamily: 'Inter, sans-serif' }}>
             {initial ? 'Update' : 'Add'}
           </button>
         </div>

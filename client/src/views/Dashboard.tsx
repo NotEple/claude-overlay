@@ -25,8 +25,25 @@ import { RotateCcw, Settings } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
-type DashboardTheme = "fox" | "indigo";
+type DashboardTheme = "fox" | "custom";
 const THEME_STORAGE_KEY = "dashboard_theme";
+const CUSTOM_ACCENT_STORAGE_KEY = "dashboard_custom_accent";
+
+function customAccentVariables(hex: string) {
+  const value = hex.replace("#", "");
+  const rgb = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
+  const luminance = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+  const mix = (target: number, amount: number) => `#${rgb.map((channel) => Math.round(channel + (target - channel) * amount).toString(16).padStart(2, "0")).join("")}`;
+  return {
+    "--accent-solid": hex,
+    "--accent-border": mix(255, 0.18),
+    "--accent-text": mix(255, 0.38),
+    "--accent-surface": mix(0, 0.72),
+    "--accent-surface-strong": mix(0, 0.56),
+    "--accent-rgb": rgb.join(", "),
+    "--accent-contrast": luminance > 0.58 ? "#111827" : "#ffffff",
+  } as React.CSSProperties;
+}
 
 interface DashboardProps {
   user: AuthUser;
@@ -87,6 +104,7 @@ export function Dashboard({
   });
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const copiedElementsRef = useRef<CanvasElement[]>([]);
   const [showWhitelist, setShowWhitelist] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [drawColor, setDrawColor] = useState("#ff4444");
@@ -100,13 +118,16 @@ export function Dashboard({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [dvdSoundUploading, setDvdSoundUploading] = useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<DashboardTheme>(() =>
-    localStorage.getItem(THEME_STORAGE_KEY) === "indigo" ? "indigo" : "fox",
-  );
+  const [theme, setTheme] = useState<DashboardTheme>(() => {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return saved === "custom" || saved === "indigo" ? "custom" : "fox";
+  });
+  const [customAccent, setCustomAccent] = useState(() => localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY) ?? "#4f46e5");
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+  useEffect(() => { localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccent); }, [customAccent]);
 
   const handleDvdSoundUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -191,6 +212,51 @@ export function Dashboard({
     },
     [addElement],
   );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select") || target?.isContentEditable) return;
+
+      if (event.key.toLowerCase() === "c") {
+        const selected = elements.filter((element) => selectedIds.has(element.id));
+        if (!selected.length) return;
+        copiedElementsRef.current = selected.map((element) => ({ ...element }));
+        event.preventDefault();
+        toast.success(`Copied ${selected.length} element${selected.length === 1 ? "" : "s"}`);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "v" && copiedElementsRef.current.length) {
+        event.preventDefault();
+        const groupIds = new Map<string, string>();
+        const topZ = elements.reduce((highest, element) => Math.max(highest, element.zIndex), Date.now());
+        const copies = copiedElementsRef.current.map((element, index) => {
+          let groupId = element.groupId;
+          if (groupId) {
+            if (!groupIds.has(groupId)) groupIds.set(groupId, randomUUID());
+            groupId = groupIds.get(groupId)!;
+          }
+          return {
+            ...element,
+            id: randomUUID(),
+            x: element.x + 32,
+            y: element.y + 32,
+            zIndex: topZ + index + 1,
+            groupId,
+            dvdEnabled: false,
+          } satisfies CanvasElement;
+        });
+        copies.forEach(addElement);
+        copiedElementsRef.current = copies.map((element) => ({ ...element }));
+        setSelectedIds(new Set(copies.map((element) => element.id)));
+        toast.success(`Pasted ${copies.length} element${copies.length === 1 ? "" : "s"}`);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [addElement, elements, selectedIds, toast]);
 
   const handleGroup = useCallback(() => {
     const groupId = randomUUID();
@@ -332,6 +398,7 @@ export function Dashboard({
         background: "#0d0d0d",
         color: "white",
         overflow: "hidden",
+        ...(theme === "custom" ? customAccentVariables(customAccent) : {}),
       }}
     >
       {/* Top bar */}
@@ -688,12 +755,12 @@ export function Dashboard({
                     DASHBOARD THEME
                   </div>
                   <div style={{ display: "flex", gap: 5, marginBottom: 7 }}>
-                    {(["fox", "indigo"] as const).map((option) => (
+                    {(["fox", "custom"] as const).map((option) => (
                       <button
                         className="ui-button ui-button--compact"
                         key={option}
                         onClick={() => setTheme(option)}
-                        title={`Use the ${option === "fox" ? "Fox Orange" : "Indigo"} dashboard theme`}
+                        title={option === "fox" ? "Use the default Fox Orange accent" : "Use your custom accent color"}
                         style={{
                           flex: 1,
                           background:
@@ -712,10 +779,20 @@ export function Dashboard({
                           borderRadius: 4,
                         }}
                       >
-                        {option === "fox" ? "Fox Orange" : "Indigo"}
+                        {option === "fox" ? "Fox Orange" : "Custom"}
                       </button>
                     ))}
                   </div>
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8, color: "#b6beca", fontSize: 10 }}>
+                    <span>Custom accent</span>
+                    <input
+                      type="color"
+                      value={customAccent}
+                      onChange={(event) => { setCustomAccent(event.target.value); setTheme("custom"); }}
+                      title="Choose a custom dashboard accent color"
+                      style={{ width: 42, height: 26, padding: 2, border: "1px solid #3a3a3a", borderRadius: 5, background: "#111", cursor: "pointer" }}
+                    />
+                  </label>
                   <div
                     style={{
                       padding: "7px 4px 5px",

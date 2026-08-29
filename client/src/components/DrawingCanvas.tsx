@@ -46,6 +46,7 @@ function floodFill(
     Math.abs(data[i + 3] - tA) <= tolerance;
 
   const visited = new Uint8Array(w * h);
+  const filled = new Uint8Array(w * h);
   const stack = [startY * w + startX];
   const MAX = 3_000_000;
   let count = 0;
@@ -60,6 +61,7 @@ function floodFill(
     data[i4 + 1] = fillColor[1];
     data[i4 + 2] = fillColor[2];
     data[i4 + 3] = fillColor[3];
+    filled[pos] = 1;
     count++;
     const x = pos % w, y = (pos / w) | 0;
     if (x > 0) stack.push(pos - 1);
@@ -68,10 +70,11 @@ function floodFill(
     if (y < h - 1) stack.push(pos + w);
   }
 
-  // 1-pixel dilation: expand fill into adjacent stroke-edge pixels (anti-aliased
-  // pixels that aren't background and weren't reached by the BFS).
+  // Expand the fill beneath the anti-aliased inner edge of the brush. `visited`
+  // also contains rejected boundary pixels, so use the separate `filled` mask;
+  // otherwise the exact edge pixels are skipped and a hairline gap remains.
   for (let pos = 0; pos < w * h; pos++) {
-    if (!visited[pos]) continue;
+    if (!filled[pos]) continue;
     const x = pos % w, y = (pos / w) | 0;
     const neighbors = [
       x > 0 ? pos - 1 : -1,
@@ -80,13 +83,25 @@ function floodFill(
       y < h - 1 ? pos + w : -1,
     ];
     for (const n of neighbors) {
-      if (n < 0 || visited[n]) continue;
+      if (n < 0 || filled[n]) continue;
       const i4 = n * 4;
       if (matches(i4)) continue; // skip open background pixels
-      data[i4] = fillColor[0];
-      data[i4 + 1] = fillColor[1];
-      data[i4 + 2] = fillColor[2];
-      data[i4 + 3] = fillColor[3];
+
+      // Composite the fill behind the existing edge rather than replacing it.
+      // This closes the transparent anti-alias seam while preserving the
+      // brush's original color (including when outline and fill differ).
+      const edgeAlpha = data[i4 + 3] / 255;
+      const fillAlpha = fillColor[3] / 255;
+      const outAlpha = edgeAlpha + fillAlpha * (1 - edgeAlpha);
+      if (outAlpha === 0) continue;
+      for (let channel = 0; channel < 3; channel++) {
+        data[i4 + channel] = Math.round(
+          (data[i4 + channel] * edgeAlpha +
+            fillColor[channel] * fillAlpha * (1 - edgeAlpha)) /
+            outAlpha,
+        );
+      }
+      data[i4 + 3] = Math.round(outAlpha * 255);
     }
   }
 

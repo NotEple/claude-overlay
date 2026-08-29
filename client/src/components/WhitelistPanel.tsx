@@ -88,7 +88,7 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
               <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 placeholder="username" style={{ flex: 1, background: '#111', border: '1px solid #333', borderRadius: 4, color: '#e2e8f0', fontSize: 12, padding: '6px 10px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
               <button className="ui-button" title="Add this Twitch user to the dashboard whitelist" onClick={handleAdd} disabled={loading || !input.trim()}
-                style={{ padding: '6px 12px', background: 'var(--accent-solid)', border: 'none', borderRadius: 4, color: 'white', fontSize: 12, cursor: loading || !input.trim() ? 'not-allowed' : 'pointer', opacity: loading || !input.trim() ? 0.5 : 1 }}>
+                style={{ padding: '6px 12px', background: 'var(--accent-solid)', border: 'none', borderRadius: 4, color: 'var(--accent-contrast)', fontSize: 12, cursor: loading || !input.trim() ? 'not-allowed' : 'pointer', opacity: loading || !input.trim() ? 0.5 : 1 }}>
                 {loading ? '…' : 'Add'}
               </button>
             </div>
