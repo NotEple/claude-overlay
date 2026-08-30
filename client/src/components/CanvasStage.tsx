@@ -1642,8 +1642,7 @@ export function CanvasStage({
   const volumeCommitTimersRef = useRef<Map<string, number>>(new Map());
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const twitchEmbedRef = useRef<HTMLDivElement>(null);
-  const [twitchPointerShieldActive, setTwitchPointerShieldActive] =
-    useState(false);
+  const [twitchInteractionEnabled, setTwitchInteractionEnabled] = useState(false);
   const [twitchNeedsReconnect, setTwitchNeedsReconnect] = useState(false);
   const [twitchPlayerGeneration, setTwitchPlayerGeneration] = useState(0);
   const snapXGuideRef = useRef<HTMLDivElement>(null);
@@ -2238,7 +2237,7 @@ export function CanvasStage({
 
     // Invalidate events from the old player before removing its iframe.
     twitchSessionRef.current += 1;
-    setTwitchPointerShieldActive(false);
+    setTwitchInteractionEnabled(false);
     twitchNeedsReconnectRef.current = false;
     setTwitchNeedsReconnect(false);
     twitchHasPlayedRef.current = false;
@@ -2263,7 +2262,7 @@ export function CanvasStage({
     div.style.display = "block";
 
     if (twitchInitedRef.current) {
-      setTwitchPointerShieldActive(false);
+      setTwitchInteractionEnabled(false);
       twitchPlayerRef.current?.setChannel(twitchChannel);
       return;
     }
@@ -2286,7 +2285,7 @@ export function CanvasStage({
       twitchHasPlayedRef.current = true;
       twitchNeedsReconnectRef.current = false;
       setTwitchNeedsReconnect(false);
-      setTwitchPointerShieldActive(true);
+      setTwitchInteractionEnabled(false);
     });
     player.addEventListener(Twitch.Player.PAUSE, () => {
       if (session !== twitchSessionRef.current) return;
@@ -2350,6 +2349,7 @@ export function CanvasStage({
         {/* Twitch.Player container — inside workspace so zoom/pan applies automatically */}
         <div
           ref={twitchEmbedRef}
+          className="canvas-interaction-surface"
           style={{
             position: "absolute",
             left: STREAM_OFFSET_X,
@@ -2362,23 +2362,12 @@ export function CanvasStage({
         >
           <div
             id="twitch-player-container"
-            style={{ width: "100%", height: "100%" }}
+            style={{
+              width: "100%",
+              height: "100%",
+              pointerEvents: twitchInteractionEnabled ? "auto" : "none",
+            }}
           />
-          {/* Twitch must be unobstructed while it initializes. Once PLAYING is
-              confirmed, this surface receives canvas pointer movement without
-              interfering with the already-running video. */}
-          {twitchPointerShieldActive && (
-            <div
-              id="twitch-pointer-shield"
-              className="canvas-interaction-surface"
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 1,
-                cursor: "default",
-              }}
-            />
-          )}
         </div>
         <div
           className="viewport-rect"
@@ -2396,6 +2385,45 @@ export function CanvasStage({
         >
           1920 × 1080 — stream viewport
         </div>
+        <button
+          type="button"
+          className="ui-button ui-button--compact"
+          onClick={(event) => {
+            event.stopPropagation();
+            setTwitchInteractionEnabled((enabled) => !enabled);
+          }}
+          title={
+            twitchInteractionEnabled
+              ? "Lock Twitch input and restore canvas zoom, pan, selection, and dragging"
+              : "Temporarily unlock Twitch input so you can press its Play button"
+          }
+          aria-pressed={twitchInteractionEnabled}
+          style={{
+            position: "absolute",
+            left: STREAM_OFFSET_X + STREAM_W - 112,
+            top: STREAM_OFFSET_Y - 29,
+            width: 112,
+            height: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 5,
+            padding: "0 7px",
+            border: `1px solid ${
+              twitchInteractionEnabled ? "#f59e0b" : "#3a3a3f"
+            }`,
+            borderRadius: 4,
+            background: twitchInteractionEnabled ? "#3a2608" : "#1b1b1d",
+            color: twitchInteractionEnabled ? "#fbbf24" : "#b7bec8",
+            fontSize: 10,
+            fontWeight: 700,
+            cursor: "pointer",
+            zIndex: 5,
+          }}
+        >
+          {twitchInteractionEnabled ? <Unlock size={12} /> : <Lock size={12} />}
+          {twitchInteractionEnabled ? "Finish input" : "Play stream"}
+        </button>
         <div
           className="viewport-rect"
           style={{

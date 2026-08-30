@@ -52,7 +52,6 @@ function DashboardApp() {
 function LoadingScreen() {
   return (
     <main className="loading-screen" aria-live="polite" aria-busy="true">
-      <div className="loading-screen__glow" />
       <div className="loading-screen__content">
         <img src={vicksySpin} alt="Vicksy spinning while the overlay loads" />
         <div>

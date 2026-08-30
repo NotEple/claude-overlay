@@ -701,7 +701,9 @@ export function Dashboard({
                     padding: "0 7px",
                     border: `1px solid ${activityMenuOpen ? "var(--accent-border)" : "#2d2d31"}`,
                     borderRadius: 5,
-                    background: activityMenuOpen ? "var(--accent-surface)" : "#171719",
+                    background: activityMenuOpen
+                      ? "var(--accent-surface)"
+                      : "#171719",
                     color: "#aeb6c2",
                     cursor: "pointer",
                     textAlign: "left",
@@ -716,6 +718,48 @@ export function Dashboard({
                     {studio.activity.length} {activityMenuOpen ? "▲" : "▼"}
                   </span>
                 </button>
+                <div style={{ display: "grid", gap: 3, marginTop: 5 }}>
+                  {studio.activity.slice(0, 3).map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: "5px 7px",
+                        border: "1px solid #27272b",
+                        borderRadius: 4,
+                        background: "#141416",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#b9c0ca",
+                          fontSize: 10,
+                          lineHeight: 1.35,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <strong>{item.user}</strong> {item.action}
+                      </div>
+                      <div
+                        style={{ color: "#7f8895", fontSize: 9, marginTop: 1 }}
+                      >
+                        {new Date(item.at).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                  {studio.activity.length === 0 && (
+                    <div
+                      style={{
+                        color: "#737b87",
+                        fontSize: 10,
+                        padding: "4px 7px",
+                      }}
+                    >
+                      No activity yet
+                    </div>
+                  )}
+                </div>
               </div>
               {activityMenuOpen && (
                 <div
@@ -818,7 +862,8 @@ export function Dashboard({
                     position: "fixed",
                     left: "calc(var(--sidebar-width) + 10px)",
                     bottom: 16,
-                    width: "min(320px, calc(100vw - var(--sidebar-width) - 26px))",
+                    width:
+                      "min(320px, calc(100vw - var(--sidebar-width) - 26px))",
                     maxHeight: "min(440px, calc(100vh - 32px))",
                     overflowY: "auto",
                     padding: 9,
@@ -829,10 +874,34 @@ export function Dashboard({
                     zIndex: 3000,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 3px 8px", marginBottom: 7, borderBottom: "1px solid #2a2a2f" }}>
-                    <strong style={{ color: "#e2e5ea", fontSize: 12 }}>Connection status</strong>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      padding: "2px 3px 8px",
+                      marginBottom: 7,
+                      borderBottom: "1px solid #2a2a2f",
+                    }}
+                  >
+                    <strong style={{ color: "#e2e5ea", fontSize: 12 }}>
+                      Connection status
+                    </strong>
                     <span style={{ flex: 1 }} />
-                    <button className="ui-icon-button ui-button--compact" onClick={() => setPresenceMenuOpen(false)} title="Close connection status" aria-label="Close connection status" style={{ border: "1px solid #3a3a3f", background: "#222", color: "#cbd1da", cursor: "pointer" }}><X size={13}/></button>
+                    <button
+                      className="ui-icon-button ui-button--compact"
+                      onClick={() => setPresenceMenuOpen(false)}
+                      title="Close connection status"
+                      aria-label="Close connection status"
+                      style={{
+                        border: "1px solid #3a3a3f",
+                        background: "#222",
+                        color: "#cbd1da",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
                   </div>
                   <div
                     style={{
@@ -1462,8 +1531,9 @@ export function Dashboard({
         </div>
       </div>
 
-      {showWhitelist && (
+      {isAdmin && (
         <WhitelistPanel
+          open={showWhitelist}
           onClose={() => setShowWhitelist(false)}
           isOwner={user.isOwner}
           isAdmin={isAdmin}

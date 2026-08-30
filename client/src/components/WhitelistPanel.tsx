@@ -13,12 +13,13 @@ interface WhitelistEntry {
 }
 
 interface WhitelistPanelProps {
+  open: boolean;
   onClose: () => void;
   isOwner: boolean;
   isAdmin: boolean;
 }
 
-export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProps) {
+export function WhitelistPanel({ open, onClose, isOwner, isAdmin }: WhitelistPanelProps) {
   const [list, setList] = useState<WhitelistEntry[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,8 +75,8 @@ export function WhitelistPanel({ onClose, isOwner, isAdmin }: WhitelistPanelProp
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'start', justifyContent: 'flex-end' }} onClick={onClose}>
-      <div style={{ height: '100%', width: 300, background: '#1a1a1a', borderLeft: '1px solid #333', display: 'flex', flexDirection: 'column', boxShadow: '0 0 20px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
+    <div className={`whitelist-backdrop${open ? ' whitelist-backdrop--open' : ''}`} aria-hidden={!open} onClick={onClose}>
+      <div className="whitelist-panel" style={{ background: '#1a1a1a', borderLeft: '1px solid #333', display: 'flex', flexDirection: 'column', boxShadow: '0 0 20px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #333' }}>
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#e2e8f0', fontFamily: 'Inter, sans-serif' }}>Whitelist</h2>
           <button className="ui-icon-button" title="Close whitelist settings" aria-label="Close whitelist settings" onClick={onClose} style={{ background: 'none', border: '1px solid #333', color: '#ccc', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><X size={18} /></button>
