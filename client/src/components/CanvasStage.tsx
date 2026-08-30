@@ -28,6 +28,7 @@ import type {
   DrawStroke,
   MediaControlPayload,
   DvdCelebrationSettings,
+  FlyDirection,
 } from "../types";
 import { renderAction } from "./DrawingCanvas";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -1611,6 +1612,9 @@ export interface CanvasStageProps {
   directUpdateRef?: React.MutableRefObject<
     ((id: string, changes: Partial<CanvasElement>) => void) | null
   >;
+  previewFlyRef?: React.MutableRefObject<
+    ((id: string, direction: FlyDirection, durationSeconds: number) => boolean) | null
+  >;
   showTwitchEmbed?: boolean;
   twitchChannel?: string;
   drawingLayer?: React.ReactNode;
@@ -1629,6 +1633,7 @@ export function CanvasStage({
   onMediaControl,
   mediaControlRef,
   directUpdateRef,
+  previewFlyRef,
   showTwitchEmbed = false,
   twitchChannel = "",
   drawingLayer,
@@ -1850,6 +1855,54 @@ export function CanvasStage({
     const nodeMap = nodeMapRef.current;
     const mediaElMap = mediaElMapRef.current;
     const presentIds = new Set(elements.map((e) => e.id));
+
+    if (previewFlyRef) {
+      previewFlyRef.current = (id, direction, durationSeconds) => {
+        const node = nodeMap.get(id);
+        const element = elementsRef.current.find((item) => item.id === id);
+        if (!node || !element) return false;
+        const [movement, lane] = direction.split(
+          /-(?=top$|center$|bottom$|left$|right$)/,
+        ) as [string, string];
+        const horizontal =
+          movement === "left-to-right" || movement === "right-to-left";
+        const laneX =
+          lane === "left"
+            ? STREAM_OFFSET_X
+            : lane === "right"
+              ? STREAM_OFFSET_X + STREAM_W - element.width
+              : STREAM_OFFSET_X + (STREAM_W - element.width) / 2;
+        const laneY =
+          lane === "top"
+            ? STREAM_OFFSET_Y
+            : lane === "bottom"
+              ? STREAM_OFFSET_Y + STREAM_H - element.height
+              : STREAM_OFFSET_Y + (STREAM_H - element.height) / 2;
+        let fromX = laneX;
+        let toX = laneX;
+        let fromY = laneY;
+        let toY = laneY;
+        if (horizontal) {
+          fromX = movement === "left-to-right" ? STREAM_OFFSET_X - element.width : STREAM_OFFSET_X + STREAM_W;
+          toX = movement === "left-to-right" ? STREAM_OFFSET_X + STREAM_W : STREAM_OFFSET_X - element.width;
+        } else {
+          fromY = movement === "top-to-bottom" ? STREAM_OFFSET_Y - element.height : STREAM_OFFSET_Y + STREAM_H;
+          toY = movement === "top-to-bottom" ? STREAM_OFFSET_Y + STREAM_H : STREAM_OFFSET_Y - element.height;
+        }
+        node.getAnimations().forEach((animation) => animation.cancel());
+        node.animate(
+          [
+            { left: `${fromX}px`, top: `${fromY}px`, opacity: 1 },
+            { left: `${toX}px`, top: `${toY}px`, opacity: 1 },
+          ],
+          {
+            duration: Math.max(1, durationSeconds) * 1000,
+            easing: "linear",
+          },
+        );
+        return true;
+      };
+    }
 
     if (directUpdateRef) {
       directUpdateRef.current = (

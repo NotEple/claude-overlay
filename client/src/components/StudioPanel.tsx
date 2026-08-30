@@ -53,6 +53,7 @@ interface StudioPanelProps {
   onPlaySound: (id: string) => void;
   onSaveTrigger: (trigger: OverlayTrigger) => void;
   onDeleteTrigger: (id: string) => void;
+  onPreviewFly: (id: string, direction: FlyDirection, durationSeconds: number) => boolean;
   dvdCelebrationSettings: DvdCelebrationSettings;
   dvdSoundUploading: boolean;
   onDvdSettingsChange: (settings: DvdCelebrationSettings) => void;
@@ -601,6 +602,30 @@ export function StudioPanel(props: StudioPanelProps) {
                   }
                 />
               </label>
+            )}
+            {triggerAction === "fly-across" && (
+              <button
+                type="button"
+                className="ui-button ui-button--compact"
+                disabled={!targetId}
+                onClick={() => {
+                  if (!targetId || !props.onPreviewFly(targetId, flyDirection, duration)) {
+                    toast.error("Choose an available media element to preview");
+                    return;
+                  }
+                  toast.info("Playing dashboard-only flight preview");
+                }}
+                title="Preview this flight only on your dashboard; OBS and other users are not affected"
+                style={{
+                  width: "100%",
+                  border: "1px solid #3a3a3f",
+                  background: "#202024",
+                  color: "#d7dce4",
+                  cursor: targetId ? "pointer" : "not-allowed",
+                }}
+              >
+                <Play size={12} /> Preview flight on dashboard
+              </button>
             )}
             <label
               style={{

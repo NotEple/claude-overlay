@@ -194,9 +194,15 @@ export function useSocket({
 
     // Batch position updates via rAF
     socket.on("element:updated", ({ id, changes }) => {
+      // Flight duration must use the receiving browser's clock. Comparing a
+      // Render server timestamp with a viewer's system clock can clamp the
+      // animation to its beginning or end and make duration changes ineffective.
+      const normalizedChanges = changes.flyStartedAt
+        ? { ...changes, flyStartedAt: Date.now() }
+        : changes;
       pendingUpdates.current.set(id, {
         ...(pendingUpdates.current.get(id) ?? {}),
-        ...changes,
+        ...normalizedChanges,
       });
     });
 

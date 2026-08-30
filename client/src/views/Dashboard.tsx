@@ -21,7 +21,7 @@ import { useSocket } from "../hooks/useSocket";
 import { randomUUID } from "../utils";
 import type { AuthUser } from "../hooks/useAuth";
 import { authHeaders } from "../hooks/useAuth";
-import type { CanvasElement, MediaControlPayload } from "../types";
+import type { CanvasElement, FlyDirection, MediaControlPayload } from "../types";
 import {
   Activity,
   Eye,
@@ -85,6 +85,9 @@ export function Dashboard({
   >(null);
   const directUpdateRef = useRef<
     ((id: string, changes: Partial<CanvasElement>) => void) | null
+  >(null);
+  const previewFlyRef = useRef<
+    ((id: string, direction: FlyDirection, durationSeconds: number) => boolean) | null
   >(null);
 
   const handleIncomingMediaControl = useCallback(
@@ -1482,6 +1485,7 @@ export function Dashboard({
             onMediaControl={handleMediaControl}
             mediaControlRef={dashboardControlRef}
             directUpdateRef={directUpdateRef}
+            previewFlyRef={previewFlyRef}
             showTwitchEmbed={showTwitchEmbed}
             twitchChannel={twitchChannel}
             drawingLayer={
@@ -1523,6 +1527,9 @@ export function Dashboard({
             onPlaySound={playSound}
             onSaveTrigger={saveTrigger}
             onDeleteTrigger={deleteTrigger}
+            onPreviewFly={(id, direction, durationSeconds) =>
+              previewFlyRef.current?.(id, direction, durationSeconds) ?? false
+            }
             dvdCelebrationSettings={dvdCelebrationSettings}
             dvdSoundUploading={dvdSoundUploading}
             onDvdSettingsChange={setDvdCelebrationSettings}
