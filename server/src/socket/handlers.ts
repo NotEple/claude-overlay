@@ -1,5 +1,7 @@
 import type { Server, Socket } from "socket.io";
+import { randomUUID } from "crypto";
 import type { AuthUser } from "../auth/routes.js";
+import { saveStudioData } from "../db/index.js";
 import type { CanvasStore } from "../state/canvasStore.js";
 import type {
   ClientToServerEvents,
@@ -8,6 +10,7 @@ import type {
   UserPresencePayload,
 } from "../types.js";
 import { validElement, validElementUpdate, validMediaControl, validStroke } from "./validation.js";
+import { getTwitchChatChannel, setTwitchChatChannel } from "../twitch/eventsub.js";
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -15,6 +18,18 @@ export type ActiveUser = UserPresencePayload & { socketId: string };
 
 const MAX_ELEMENTS = 1_000;
 const MAX_STROKES = 10_000;
+const HISTORY_LIMIT = 30;
+
+const clone = <T>(value: T): T => structuredClone(value);
+function studioState(store: CanvasStore) {
+  return { scenes: store.scenes, presets: store.presets, sounds: store.sounds, triggers: store.triggers, activity: store.activity, twitchConnected: store.twitchConnected };
+}
+function historyStatus(store: CanvasStore) { return { canUndo: store.undoStack.length > 0, canRedo: store.redoStack.length > 0 }; }
+function checkpoint(store: CanvasStore) {
+  store.undoStack.push({ elements: clone(store.canvasState.elements), strokes: clone(store.drawStrokes) });
+  if (store.undoStack.length > HISTORY_LIMIT) store.undoStack.shift();
+  store.redoStack.length = 0;
+}
 
 export function registerSocketHandlers(
   io: AppServer,
@@ -22,6 +37,7 @@ export function registerSocketHandlers(
   store: CanvasStore,
   activeUsers: Map<string, ActiveUser>,
   activeOverlays: Set<string>,
+  onMediaEnded?: (id: string) => void,
 ) {
   const user = (socket as any).jwtUser as AuthUser | undefined;
   const isOverlay = socket.handshake.query.mode === "overlay";
@@ -32,11 +48,25 @@ export function registerSocketHandlers(
   socket.emit("state:sync", canvasState);
   socket.emit("draw:sync", drawStrokes);
   socket.emit("dvd:settings", store.dvdCelebrationSettings);
+  if (!isOverlay) socket.emit("chat:channel", { channel: getTwitchChatChannel() });
+  if (!isOverlay && user) {
+    socket.emit("studio:sync", studioState(store));
+    socket.emit("history:status", historyStatus(store));
+  }
   if (isOverlay) activeOverlays.add(socket.id);
   io.emit("overlay:status", {
     connected: activeOverlays.size > 0,
     count: activeOverlays.size,
   });
+
+  if (isOverlay) {
+    socket.on("media:ended", ({ id }) => {
+      if (typeof id !== "string" || id.length > 100) return;
+      const element = canvasState.elements.find((candidate) => candidate.id === id);
+      if (!element || element.type !== "video" || !element.autoVisibility) return;
+      onMediaEnded?.(id);
+    });
+  }
 
   socket.on("disconnect", () => {
     console.log(`Disconnected: ${user?.login ?? "overlay"} (${socket.id})`);
@@ -56,9 +86,29 @@ export function registerSocketHandlers(
   // Public OBS renderers receive state, but never get mutation listeners.
   if (isOverlay || !user) return;
 
+  let lastCheckpointKey = "";
+  let lastCheckpointAt = 0;
+  const log = (action: string) => {
+    store.activity.unshift({ id: randomUUID(), at: new Date().toISOString(), user: user.displayName, action });
+    store.activity = store.activity.slice(0, 50);
+    io.to("dashboard").emit("studio:sync", studioState(store));
+  };
+  const record = (key: string, action: string) => {
+    const now = Date.now();
+    const isNewAction = key !== lastCheckpointKey || now - lastCheckpointAt > 750;
+    if (isNewAction) checkpoint(store);
+    lastCheckpointKey = key;
+    lastCheckpointAt = now;
+    if (isNewAction) {
+      log(action);
+      io.to("dashboard").emit("history:status", historyStatus(store));
+    }
+  };
+
   socket.on("element:add", ({ element }) => {
     if (!validElement(element) || canvasState.elements.length >= MAX_ELEMENTS) return;
     if (canvasState.elements.some((existing) => existing.id === element.id)) return;
+    record(`add:${element.id}`, `added ${element.type}`);
     canvasState.elements.push(element);
     io.emit("element:added", { element });
   });
@@ -67,6 +117,8 @@ export function registerSocketHandlers(
     if (typeof id !== "string" || id.length > 100 || !validElementUpdate(changes)) return;
     const element = canvasState.elements.find((candidate) => candidate.id === id);
     if (!element) return;
+    if (element.locked && Object.keys(changes).some((key) => ["x", "y", "width", "height", "rotation", "scaleX", "scaleY", "dvdEnabled", "dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY"].includes(key))) return;
+    record(`update:${id}`, `updated ${element.type}`);
     if ("groupId" in changes && changes.groupId === null) delete element.groupId;
     Object.assign(element, changes);
     io.emit("element:updated", { id, changes });
@@ -74,6 +126,9 @@ export function registerSocketHandlers(
 
   socket.on("element:remove", ({ id }) => {
     if (typeof id !== "string" || id.length > 100) return;
+    const element = canvasState.elements.find((candidate) => candidate.id === id);
+    if (!element || element.locked) return;
+    record(`remove:${id}`, `deleted ${element.type}`);
     canvasState.elements = canvasState.elements.filter((element) => element.id !== id);
     io.emit("element:removed", { id });
   });
@@ -111,10 +166,12 @@ export function registerSocketHandlers(
   socket.on("draw:stroke", (stroke) => {
     if (!validStroke(stroke) || drawStrokes.length >= MAX_STROKES) return;
     if (drawStrokes.some((existing) => existing.id === stroke.id)) return;
+    record(`stroke:${stroke.id}`, "added a drawing stroke");
     drawStrokes.push(stroke);
     socket.broadcast.emit("draw:stroke", stroke);
   });
   socket.on("draw:clear", () => {
+    if (drawStrokes.length) record("draw:clear", "cleared the drawing");
     drawStrokes.length = 0;
     socket.broadcast.emit("draw:clear");
   });
@@ -122,6 +179,91 @@ export function registerSocketHandlers(
     if (!validLiveStroke(data)) return;
     socket.volatile.broadcast.emit("draw:live", { ...data, userId: user.id } as LiveDrawStroke);
   });
+
+  socket.on("history:undo", () => {
+    const previous = store.undoStack.pop();
+    if (!previous) return;
+    lastCheckpointKey = "";
+    store.redoStack.push({ elements: clone(canvasState.elements), strokes: clone(drawStrokes) });
+    canvasState.elements = clone(previous.elements);
+    drawStrokes.splice(0, drawStrokes.length, ...clone(previous.strokes));
+    io.emit("state:sync", canvasState);
+    io.emit("draw:sync", drawStrokes);
+    io.to("dashboard").emit("history:status", historyStatus(store));
+  });
+  socket.on("history:redo", () => {
+    const next = store.redoStack.pop();
+    if (!next) return;
+    lastCheckpointKey = "";
+    store.undoStack.push({ elements: clone(canvasState.elements), strokes: clone(drawStrokes) });
+    canvasState.elements = clone(next.elements);
+    drawStrokes.splice(0, drawStrokes.length, ...clone(next.strokes));
+    io.emit("state:sync", canvasState);
+    io.emit("draw:sync", drawStrokes);
+    io.to("dashboard").emit("history:status", historyStatus(store));
+  });
+
+  const syncStudio = () => io.to("dashboard").emit("studio:sync", studioState(store));
+  socket.on("chat:channel:set", async ({ channel }) => {
+    if (typeof channel !== "string" || channel.length > 50) return;
+    const previous = getTwitchChatChannel();
+    if (!await setTwitchChatChannel(channel)) return;
+    const current = getTwitchChatChannel();
+    io.to("dashboard").emit("chat:channel", { channel: current });
+    if (current !== previous) log(`switched Twitch chat to ${current}`);
+  });
+  socket.on("scene:save", async ({ id, name }) => {
+    if (!validLabel(id, 100) || !validLabel(name, 60)) return;
+    const scene = { id, name: name.trim(), elements: clone(canvasState.elements), strokes: clone(drawStrokes), updatedAt: new Date().toISOString() };
+    store.scenes = [...store.scenes.filter((item) => item.id !== id), scene].slice(-50);
+    await saveStudioData({ scenes: store.scenes }); log(`saved scene “${scene.name}”`);
+  });
+  socket.on("scene:load", ({ id }) => {
+    const scene = store.scenes.find((item) => item.id === id); if (!scene) return;
+    checkpoint(store); canvasState.elements = clone(scene.elements); drawStrokes.splice(0, drawStrokes.length, ...clone(scene.strokes)); log(`loaded scene “${scene.name}”`);
+    io.emit("state:sync", canvasState); io.emit("draw:sync", drawStrokes); io.to("dashboard").emit("history:status", historyStatus(store));
+  });
+  socket.on("scene:delete", async ({ id }) => { const item = store.scenes.find(scene => scene.id === id); store.scenes = store.scenes.filter((scene) => scene.id !== id); await saveStudioData({ scenes: store.scenes }); if (item) log(`deleted scene “${item.name}”`); else syncStudio(); });
+  socket.on("preset:save", async ({ id, name, elementIds }) => {
+    if (!validLabel(id, 100) || !validLabel(name, 60) || !Array.isArray(elementIds) || elementIds.length > 100) return;
+    const elements = canvasState.elements.filter((element) => elementIds.includes(element.id)); if (!elements.length) return;
+    store.presets = [...store.presets.filter((item) => item.id !== id), { id, name: name.trim(), elements: clone(elements), createdAt: new Date().toISOString() }].slice(-100);
+    await saveStudioData({ presets: store.presets }); log(`saved preset “${name.trim()}”`);
+  });
+  socket.on("preset:load", ({ id }) => {
+    const preset = store.presets.find((item) => item.id === id); if (!preset) return;
+    checkpoint(store); log(`inserted preset “${preset.name}”`); const groups = new Map<string, string>();
+    const copies = preset.elements.map((element) => ({ ...clone(element), id: randomUUID(), x: element.x + 32, y: element.y + 32, groupId: element.groupId ? (groups.get(element.groupId) ?? (() => { const value = randomUUID(); groups.set(element.groupId!, value); return value; })()) : undefined }));
+    canvasState.elements.push(...copies); copies.forEach((element) => io.emit("element:added", { element })); io.to("dashboard").emit("history:status", historyStatus(store));
+  });
+  socket.on("preset:delete", async ({ id }) => { store.presets = store.presets.filter((item) => item.id !== id); await saveStudioData({ presets: store.presets }); syncStudio(); });
+  socket.on("sound:save", async (item) => {
+    if (!validLabel(item?.id, 100) || !validLabel(item?.name, 60) || !validUrl(item?.url) || !Number.isFinite(item.volume) || item.volume < 0 || item.volume > 1) return;
+    store.sounds = [...store.sounds.filter((sound) => sound.id !== item.id), item].slice(-100); await saveStudioData({ sounds: store.sounds }); syncStudio();
+  });
+  socket.on("sound:delete", async ({ id }) => { store.sounds = store.sounds.filter((item) => item.id !== id); await saveStudioData({ sounds: store.sounds }); syncStudio(); });
+  socket.on("sound:play", ({ id }) => { const item = store.sounds.find((sound) => sound.id === id); if (item) io.to("overlay").emit("sound:play", item); });
+  socket.on("trigger:save", async (trigger) => {
+    if (!validTrigger(trigger)) return; store.triggers = [...store.triggers.filter((item) => item.id !== trigger.id), trigger].slice(-100); await saveStudioData({ triggers: store.triggers }); syncStudio();
+  });
+  socket.on("trigger:delete", async ({ id }) => { store.triggers = store.triggers.filter((item) => item.id !== id); await saveStudioData({ triggers: store.triggers }); syncStudio(); });
+}
+
+function validLabel(value: unknown, max: number): value is string { return typeof value === "string" && value.trim().length > 0 && value.length <= max; }
+function validUrl(value: unknown): value is string { if (typeof value !== "string" || value.length > 2048) return false; try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol); } catch { return false; } }
+function validTrigger(value: any): boolean {
+  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "permission"]);
+  return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
+    && validLabel(value.id, 100) && validLabel(value.name, 60)
+    && ["chat-command", "follow", "subscribe", "gift-subscribe", "raid", "bits", "channel-points"].includes(value.event)
+    && ["show-element", "show-temporary", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay"].includes(value.action)
+    && typeof value.enabled === "boolean" && Number.isFinite(value.cooldownSeconds) && value.cooldownSeconds >= 0 && value.cooldownSeconds <= 86400
+    && (value.match === undefined || (typeof value.match === "string" && value.match.length <= 100))
+    && (value.minimum === undefined || (Number.isFinite(value.minimum) && value.minimum >= 0 && value.minimum <= 10_000_000))
+    && (value.placement === undefined || ["current", "fit", "fill", "top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"].includes(value.placement))
+    && (value.durationSeconds === undefined || (Number.isFinite(value.durationSeconds) && value.durationSeconds >= 1 && value.durationSeconds <= 3600))
+    && (value.permission === undefined || ["everyone", "vip", "moderator", "streamer"].includes(value.permission))
+    && (value.action === "refresh-overlay" ? value.targetId === undefined : validLabel(value.targetId, 100));
 }
 
 function registerPresence(socket: AppSocket, user: AuthUser, activeUsers: Map<string, ActiveUser>) {

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import type { Request, Response, NextFunction } from "express";
 import { mkdirSync } from "node:fs";
 import { open, unlink } from "node:fs/promises";
 import { requireAuth } from "../middleware/auth.js";
@@ -10,7 +11,7 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 const allowedMimeTypes = new Set([
   "image/jpeg", "image/png", "image/gif", "image/webp",
   "video/mp4", "video/webm",
-  "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp3",
+  "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp3", "audio/webm",
 ]);
 
 const upload = multer({
@@ -20,6 +21,21 @@ const upload = multer({
 });
 
 export const uploadRouter = Router();
+
+const extensionContentTypes: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp",
+  mp4: "video/mp4", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg",
+};
+
+export function setUploadedMediaHeaders(req: Request, res: Response, next: NextFunction) {
+  const originalName = typeof req.query.name === "string" ? req.query.name : "";
+  const extension = originalName.split(".").pop()?.toLowerCase() ?? "";
+  const requestedType = typeof req.query.type === "string" ? req.query.type : "";
+  const contentType = allowedMimeTypes.has(requestedType) ? requestedType : extensionContentTypes[extension];
+  if (contentType) res.type(contentType);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  next();
+}
 
 uploadRouter.post("/", requireAuth, upload.single("file"), async (req, res) => {
   if (!req.file) {
@@ -33,7 +49,7 @@ uploadRouter.post("/", requireAuth, upload.single("file"), async (req, res) => {
     return;
   }
 
-  const url = `/files/${req.file.filename}?name=${encodeURIComponent(req.file.originalname)}`;
+  const url = `/files/${req.file.filename}?name=${encodeURIComponent(req.file.originalname)}&type=${encodeURIComponent(req.file.mimetype)}`;
   res.json({ url, mimetype: req.file.mimetype });
 });
 
@@ -53,7 +69,7 @@ async function matchesFileSignature(filePath: string, mimeType: string): Promise
   if (mimeType === "image/gif") return ascii(0, 6) === "GIF87a" || ascii(0, 6) === "GIF89a";
   if (mimeType === "image/webp") return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
   if (mimeType === "video/mp4") return ascii(4, 8) === "ftyp";
-  if (mimeType === "video/webm") return starts(0x1a, 0x45, 0xdf, 0xa3);
+  if (mimeType === "video/webm" || mimeType === "audio/webm") return starts(0x1a, 0x45, 0xdf, 0xa3);
   if (mimeType === "audio/wav") return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE";
   if (mimeType === "audio/ogg") return ascii(0, 4) === "OggS";
   if (mimeType === "audio/mpeg" || mimeType === "audio/mp3") {

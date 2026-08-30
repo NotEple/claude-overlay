@@ -66,6 +66,18 @@ For production, point these at your Render URLs.
 
 Set env vars in each service's Render dashboard.
 
+Attach a Render persistent disk to the server and set `DATA_DIR` and
+`UPLOAD_DIR` to directories on that disk. The whitelist, uploaded media,
+scenes, presets, soundboard, and command definitions are stored there. Without a persistent disk,
+Render will erase those settings whenever the service filesystem is replaced.
+
+Chat commands connect anonymously to Vicksy's public channel by default.
+Switching the dashboard preview between Vicksy and Wixels also moves the chat
+listener to that channel. Those are the only two accepted channels. The
+streamer does not need to authorize the listener, and no chat token is stored.
+Anonymous chat can read public messages only; it cannot send messages or
+receive private broadcaster events.
+
 ## Next steps
 
 - [ ] Swap local `/tmp` file storage for durable object storage

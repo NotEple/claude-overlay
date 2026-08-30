@@ -20,13 +20,15 @@ export function getTwitchAuthUrl(state: string): string {
     client_id: TWITCH_CLIENT_ID,
     redirect_uri: TWITCH_REDIRECT_URI,
     response_type: "code",
+    // Dashboard login only; chat commands use a separate anonymous listener.
     scope: "user:read:email user:read:chat",
     state,
   });
   return `https://id.twitch.tv/oauth2/authorize?${params}`;
 }
 
-export async function exchangeCode(code: string): Promise<string> {
+export interface TwitchTokenSet { accessToken: string; refreshToken: string; expiresIn: number; }
+export async function exchangeCode(code: string): Promise<TwitchTokenSet> {
   const res = await fetch("https://id.twitch.tv/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -39,9 +41,18 @@ export async function exchangeCode(code: string): Promise<string> {
     }),
   });
   if (!res.ok) throw new Error("Failed to exchange Twitch code for token");
-  const data = (await res.json()) as { access_token: string };
-  return data.access_token;
+  const data = (await res.json()) as { access_token: string; refresh_token: string; expires_in: number };
+  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in };
 }
+
+export async function refreshUserToken(refreshToken: string): Promise<TwitchTokenSet> {
+  const res = await fetch("https://id.twitch.tv/oauth2/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: TWITCH_CLIENT_ID, client_secret: TWITCH_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: refreshToken }) });
+  if (!res.ok) throw new Error("Failed to refresh Twitch token");
+  const data = await res.json() as { access_token: string; refresh_token: string; expires_in: number };
+  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in };
+}
+
+export const twitchClientId = TWITCH_CLIENT_ID;
 
 export async function getTwitchUserFromToken(
   accessToken: string,
@@ -63,6 +74,8 @@ export async function getTwitchChatColor(
   userId: string,
   accessToken: string,
 ): Promise<string> {
+  const fallbackColor = "#9146FF";
+
   const res = await fetch(
     `https://api.twitch.tv/helix/chat/color?user_id=${userId}`,
     {
@@ -72,11 +85,11 @@ export async function getTwitchChatColor(
       },
     },
   );
-  if (!res.ok) return "#9146FF"; // fallback to Twitch purple
+  if (!res.ok) return fallbackColor; // fallback to Twitch purple
   const data = (await res.json()) as { data: TwitchChatColor[] };
   const color = data.data[0]?.color;
   // If user hasn't set a color, Twitch returns empty string — use purple
-  return color || "#9146FF";
+  return color || fallbackColor;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,9 +151,6 @@ export async function isStreamerLive(username: string) {
   );
 
   const data = await response.json();
-
-  console.log("Twitch status:", response.status);
-  console.log("Twitch response:", data);
 
   if (!response.ok) {
     throw new Error(data.message ?? "Twitch API error");

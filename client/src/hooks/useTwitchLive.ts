@@ -3,7 +3,7 @@ import { useToast } from "../components/ToastProvider";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 
-export function useTwitchLive() {
+export function useTwitchLive(channel: string) {
   const toast = useToast();
   const errorShownRef = useRef(false);
   const [isLive, setIsLive] = useState(false);
@@ -11,7 +11,7 @@ export function useTwitchLive() {
 
   async function checkLive() {
     try {
-      const res = await fetch(`${SERVER_URL}/auth/live`);
+      const res = await fetch(`${SERVER_URL}/auth/live?channel=${encodeURIComponent(channel)}`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const { live } = await res.json();
 
@@ -35,7 +35,7 @@ export function useTwitchLive() {
     const interval = setInterval(checkLive, 60000);
 
     return () => clearInterval(interval);
-  }, [toast]);
+  }, [channel, toast]);
 
   return {
     isLive,

@@ -24,7 +24,23 @@ export interface CanvasElement {
   dvdStartY?: number;
   dvdVelocityX?: number;
   dvdVelocityY?: number;
+  locked?: boolean;
+  opacity?: number;
+  enterAnimation?: ElementAnimation;
+  exitAnimation?: ElementAnimation;
 }
+
+export type ElementAnimation = 'none' | 'fade' | 'pop' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'spin';
+export interface SavedScene { id: string; name: string; elements: CanvasElement[]; strokes: DrawStroke[]; updatedAt: string; }
+export interface ElementPreset { id: string; name: string; elements: CanvasElement[]; createdAt: string; }
+export interface SoundboardItem { id: string; name: string; url: string; volume: number; }
+export type TriggerEventType = 'chat-command' | 'follow' | 'subscribe' | 'gift-subscribe' | 'raid' | 'bits' | 'channel-points';
+export type TriggerActionType = 'show-element' | 'show-temporary' | 'hide-element' | 'toggle-element' | 'play-media' | 'play-sound' | 'enable-dvd' | 'refresh-overlay';
+export type TriggerPlacement = 'current' | 'fit' | 'fill' | 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+export type ChatPermission = 'everyone' | 'vip' | 'moderator' | 'streamer';
+export interface OverlayTrigger { id: string; name: string; enabled: boolean; event: TriggerEventType; match?: string; minimum?: number; action: TriggerActionType; targetId?: string; cooldownSeconds: number; placement?: TriggerPlacement; durationSeconds?: number; permission?: ChatPermission; }
+export interface ActivityItem { id: string; at: string; user: string; action: string; }
+export interface StudioState { scenes: SavedScene[]; presets: ElementPreset[]; sounds: SoundboardItem[]; triggers: OverlayTrigger[]; activity: ActivityItem[]; twitchConnected: boolean; }
 
 export interface CanvasState { elements: CanvasElement[]; }
 export interface DvdCelebrationSettings {
@@ -96,6 +112,10 @@ export interface ServerToClientEvents {
   'draw:sync': (strokes: DrawStroke[]) => void;
   'draw:live': (stroke: LiveDrawStroke) => void;
   'dvd:settings': (settings: DvdCelebrationSettings) => void;
+  'studio:sync': (state: StudioState) => void;
+  'history:status': (status: { canUndo: boolean; canRedo: boolean }) => void;
+  'sound:play': (item: SoundboardItem) => void;
+  'chat:channel': (payload: { channel: string }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -103,10 +123,25 @@ export interface ClientToServerEvents {
   'element:update': (payload: ElementUpdatedPayload) => void;
   'element:remove': (payload: ElementRemovedPayload) => void;
   'media:control': (payload: MediaControlPayload) => void;
+  'media:ended': (payload: { id: string }) => void;
   'cursor:move': (payload: { x: number; y: number; showOnOverlay: boolean }) => void;
   'overlay:refresh': () => void;
   'draw:stroke': (stroke: DrawStroke) => void;
   'draw:clear': () => void;
   'draw:live': (stroke: Omit<LiveDrawStroke, 'userId'>) => void;
   'dvd:settings': (settings: DvdCelebrationSettings) => void;
+  'history:undo': () => void;
+  'history:redo': () => void;
+  'scene:save': (payload: { id: string; name: string }) => void;
+  'scene:load': (payload: { id: string }) => void;
+  'scene:delete': (payload: { id: string }) => void;
+  'preset:save': (payload: { id: string; name: string; elementIds: string[] }) => void;
+  'preset:load': (payload: { id: string }) => void;
+  'preset:delete': (payload: { id: string }) => void;
+  'sound:save': (item: SoundboardItem) => void;
+  'sound:delete': (payload: { id: string }) => void;
+  'sound:play': (payload: { id: string }) => void;
+  'trigger:save': (trigger: OverlayTrigger) => void;
+  'trigger:delete': (payload: { id: string }) => void;
+  'chat:channel:set': (payload: { channel: string }) => void;
 }

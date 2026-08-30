@@ -1,3 +1,7 @@
+import { useEffect } from "react";
+import { useToast } from "../components/ToastProvider";
+import campfireFoxes from "../assets/foxsittingverycomfortablearoundacampfirewithitsfriends-4x.gif";
+
 interface LoginPageProps {
   onLogin: () => void;
   error?: string | null;
@@ -18,26 +22,27 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
   }, [error, toast]);
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-6 text-center">
-        {/* Twitch-purple accent dot */}
-        <div className="w-3 h-3 rounded-full bg-purple-500" />
-
-        <div>
-          <h1 className="text-2xl font-semibold text-white">OBS Overlay</h1>
-          <p className="text-gray-400 text-sm mt-1">Sign in with Twitch to continue</p>
+    <main className="login-screen">
+      <div className="login-glow login-glow--one" />
+      <div className="login-glow login-glow--two" />
+      <section className="login-card" aria-labelledby="login-title">
+        <div className="login-card__eyebrow"><span /> PRIVATE STREAM CONTROL</div>
+        <div className="login-card__copy">
+          <h1 id="login-title">Vicksy’s OBS Overlay</h1>
+          <p>A cozy little control room for bringing the stream to life.</p>
         </div>
-
+        <img className="login-card__art" src={campfireFoxes} alt="Fox friends relaxing around a campfire" />
         <button
           onClick={onLogin}
           title="Authenticate with Twitch to open the dashboard"
-          className="ui-button flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+          className="ui-button login-twitch-button"
         >
           <TwitchIcon />
-          Login with Twitch
+          Continue with Twitch
         </button>
-      </div>
-    </div>
+        <p className="login-card__notice">Only approved Twitch accounts can access this dashboard.</p>
+      </section>
+    </main>
   );
 }
 
@@ -48,5 +53,3 @@ function TwitchIcon() {
     </svg>
   );
 }
-import { useEffect } from "react";
-import { useToast } from "../components/ToastProvider";

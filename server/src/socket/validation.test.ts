@@ -26,6 +26,7 @@ test("rejects invalid or oversized elements", () => {
 test("only allows supported update fields and values", () => {
   assert.equal(validElementUpdate({ x: 12, mediaVolume: 0.5 }), true);
   assert.equal(validElementUpdate({ autoVisibility: true }), true);
+  assert.equal(validElementUpdate({ locked: true, opacity: 0.5, enterAnimation: "pop", exitAnimation: "fade" }), true);
   assert.equal(
     validElementUpdate({
       dvdEnabled: true,
@@ -40,6 +41,8 @@ test("only allows supported update fields and values", () => {
   assert.equal(validElementUpdate({ id: "replacement" }), false);
   assert.equal(validElementUpdate({ autoVisibility: "yes" } as never), false);
   assert.equal(validElementUpdate({ mediaVolume: 2 }), false);
+  assert.equal(validElementUpdate({ opacity: 1.5 }), false);
+  assert.equal(validElementUpdate({ enterAnimation: "unsafe" } as never), false);
 });
 test("bounds stored drawing data", () => {
   const stroke: DrawStroke = { id: "stroke-1", points: [[1, 2]], color: "#fff", size: 4, eraser: false };

@@ -20,5 +20,10 @@ export function setRotation(element: HTMLElement, degrees: number) {
 
 export function applyNodeTransform(element: HTMLElement) {
   const { x, y } = getScale(element);
-  element.style.transform = `rotate(${getRotation(element)}deg) scaleX(${x}) scaleY(${y})`;
+  element.style.transform = `rotate(${getRotation(element)}deg)`;
+  const content = element.querySelector<HTMLElement>(":scope > .element-content");
+  if (content) {
+    content.style.transformOrigin = "center center";
+    content.style.transform = `scaleX(${x}) scaleY(${y})`;
+  }
 }

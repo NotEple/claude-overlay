@@ -11,6 +11,7 @@ import { DrawingCanvas, renderAction } from "../components/DrawingCanvas";
 import type { DrawToolMode } from "../components/DrawingCanvas";
 import { Toolbar } from "../components/Toolbar";
 import { WhitelistPanel } from "../components/WhitelistPanel";
+import { StudioPanel } from "../components/StudioPanel";
 import {
   TextDialog,
   encodeTextSrc,
@@ -21,8 +22,19 @@ import { randomUUID } from "../utils";
 import type { AuthUser } from "../hooks/useAuth";
 import { authHeaders } from "../hooks/useAuth";
 import type { CanvasElement, MediaControlPayload } from "../types";
-import { RotateCcw, Settings } from "lucide-react";
+import {
+  Activity,
+  Eye,
+  EyeOff,
+  PanelRightOpen,
+  Repeat2,
+  RotateCcw,
+  Settings,
+  X,
+} from "lucide-react";
 import { useToast } from "../components/ToastProvider";
+import { HelpGuide } from "../components/HelpGuide";
+import TileController from "../components/TileController";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 type DashboardTheme = "fox" | "custom";
@@ -31,9 +43,18 @@ const CUSTOM_ACCENT_STORAGE_KEY = "dashboard_custom_accent";
 
 function customAccentVariables(hex: string) {
   const value = hex.replace("#", "");
-  const rgb = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
+  const rgb = [0, 2, 4].map((offset) =>
+    Number.parseInt(value.slice(offset, offset + 2), 16),
+  );
   const luminance = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
-  const mix = (target: number, amount: number) => `#${rgb.map((channel) => Math.round(channel + (target - channel) * amount).toString(16).padStart(2, "0")).join("")}`;
+  const mix = (target: number, amount: number) =>
+    `#${rgb
+      .map((channel) =>
+        Math.round(channel + (target - channel) * amount)
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`;
   return {
     "--accent-solid": hex,
     "--accent-border": mix(255, 0.18),
@@ -95,6 +116,24 @@ export function Dashboard({
     addStroke,
     clearStrokes,
     sendLiveStroke,
+    studio,
+    historyStatus,
+    chatChannel: twitchChannel,
+    setChatChannel: setTwitchChannel,
+    undo,
+    redo,
+    saveScene,
+    loadScene,
+    deleteScene,
+    savePreset,
+    loadPreset,
+    deletePreset,
+    saveSound,
+    deleteSound,
+    previewSound,
+    playSound,
+    saveTrigger,
+    deleteTrigger,
   } = useSocket({
     mode: "dashboard",
     onSessionRevoked,
@@ -104,6 +143,10 @@ export function Dashboard({
   });
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectedElement =
+    selectedIds.size === 1
+      ? elements.find((element) => selectedIds.has(element.id))
+      : undefined;
   const copiedElementsRef = useRef<CanvasElement[]>([]);
   const [showWhitelist, setShowWhitelist] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
@@ -112,22 +155,25 @@ export function Dashboard({
   const [toolMode, setToolMode] = useState<DrawToolMode>("pen");
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [showTwitchEmbed, setShowTwitchEmbed] = useState(true);
-  const [twitchChannel, setTwitchChannel] = useState<"vicksy" | "wixels">(
-    "vicksy",
-  );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [dvdSoundUploading, setDvdSoundUploading] = useState(false);
+  const [activityMenuOpen, setActivityMenuOpen] = useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = useState(false);
+  const [showStudio, setShowStudio] = useState(true);
   const [theme, setTheme] = useState<DashboardTheme>(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     return saved === "custom" || saved === "indigo" ? "custom" : "fox";
   });
-  const [customAccent, setCustomAccent] = useState(() => localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY) ?? "#4f46e5");
+  const [customAccent, setCustomAccent] = useState(
+    () => localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY) ?? "#4f46e5",
+  );
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
-  useEffect(() => { localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccent); }, [customAccent]);
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccent);
+  }, [customAccent]);
 
   const handleDvdSoundUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +198,9 @@ export function Dashboard({
         toast.success(`${file.name} is now the DVD corner sound`);
       } catch (error) {
         console.error("DVD celebration sound upload failed", error);
-        toast.error("DVD sound upload failed. Use an MP3, WAV, OGG, or WebM audio file.");
+        toast.error(
+          "DVD sound upload failed. Use an MP3, WAV, OGG, or WebM audio file.",
+        );
       } finally {
         setDvdSoundUploading(false);
         event.target.value = "";
@@ -217,21 +265,43 @@ export function Dashboard({
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select") || target?.isContentEditable) return;
+      if (
+        target?.matches("input, textarea, select") ||
+        target?.isContentEditable
+      )
+        return;
+
+      if (event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        event.shiftKey ? redo() : undo();
+        return;
+      }
+      if (event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
 
       if (event.key.toLowerCase() === "c") {
-        const selected = elements.filter((element) => selectedIds.has(element.id));
+        const selected = elements.filter((element) =>
+          selectedIds.has(element.id),
+        );
         if (!selected.length) return;
         copiedElementsRef.current = selected.map((element) => ({ ...element }));
         event.preventDefault();
-        toast.success(`Copied ${selected.length} element${selected.length === 1 ? "" : "s"}`);
+        toast.success(
+          `Copied ${selected.length} element${selected.length === 1 ? "" : "s"}`,
+        );
         return;
       }
 
       if (event.key.toLowerCase() === "v" && copiedElementsRef.current.length) {
         event.preventDefault();
         const groupIds = new Map<string, string>();
-        const topZ = elements.reduce((highest, element) => Math.max(highest, element.zIndex), Date.now());
+        const topZ = elements.reduce(
+          (highest, element) => Math.max(highest, element.zIndex),
+          Date.now(),
+        );
         const copies = copiedElementsRef.current.map((element, index) => {
           let groupId = element.groupId;
           if (groupId) {
@@ -251,12 +321,14 @@ export function Dashboard({
         copies.forEach(addElement);
         copiedElementsRef.current = copies.map((element) => ({ ...element }));
         setSelectedIds(new Set(copies.map((element) => element.id)));
-        toast.success(`Pasted ${copies.length} element${copies.length === 1 ? "" : "s"}`);
+        toast.success(
+          `Pasted ${copies.length} element${copies.length === 1 ? "" : "s"}`,
+        );
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [addElement, elements, selectedIds, toast]);
+  }, [addElement, elements, selectedIds, toast, undo, redo]);
 
   const handleGroup = useCallback(() => {
     const groupId = randomUUID();
@@ -315,7 +387,12 @@ export function Dashboard({
       const sourceCtx = source.getContext("2d", { willReadFrequently: true })!;
       for (const action of strokes) renderAction(sourceCtx, action);
 
-      const pixels = sourceCtx.getImageData(0, 0, WORKSPACE_W, WORKSPACE_H).data;
+      const pixels = sourceCtx.getImageData(
+        0,
+        0,
+        WORKSPACE_W,
+        WORKSPACE_H,
+      ).data;
       let minX = WORKSPACE_W,
         minY = WORKSPACE_H,
         maxX = -1,
@@ -342,7 +419,10 @@ export function Dashboard({
 
       const blob = await new Promise<Blob>((resolve, reject) =>
         cropped.toBlob(
-          (result) => (result ? resolve(result) : reject(new Error("PNG conversion failed"))),
+          (result) =>
+            result
+              ? resolve(result)
+              : reject(new Error("PNG conversion failed")),
           "image/png",
         ),
       );
@@ -353,7 +433,8 @@ export function Dashboard({
         body,
         headers: authHeaders(),
       });
-      if (!response.ok) throw new Error(`Drawing upload failed (${response.status})`);
+      if (!response.ok)
+        throw new Error(`Drawing upload failed (${response.status})`);
       const { url } = await response.json();
 
       addElement({
@@ -374,7 +455,9 @@ export function Dashboard({
       toast.success("Drawing saved as a canvas element");
     } catch (error) {
       console.error("Could not convert drawing to an element:", error);
-      toast.error("Could not save the drawing as an element. Your drawing was kept.");
+      toast.error(
+        "Could not save the drawing as an element. Your drawing was kept.",
+      );
       // Keep the strokes intact so a temporary upload failure never destroys work.
     }
   }, [strokes, addElement, clearStrokes, toast]);
@@ -401,6 +484,7 @@ export function Dashboard({
         ...(theme === "custom" ? customAccentVariables(customAccent) : {}),
       }}
     >
+      <TileController channel={twitchChannel} />
       {/* Top bar */}
       <div
         style={{
@@ -422,17 +506,18 @@ export function Dashboard({
             letterSpacing: "0.05em",
           }}
         >
-          OBS Overlay | Vicksy
+          OBS Overlay |{" "}
+          {twitchChannel.charAt(0).toUpperCase() + twitchChannel.slice(1)}
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {isAdmin && (
             <>
               <button
                 className="ui-icon-button"
                 onClick={() => setShowWhitelist(true)}
                 style={{
-                  background: "none",
-                  border: "none",
+                  background: "#18181b",
+                  border: "1px solid #34343a",
                   color: "#ccc",
                   cursor: "pointer",
                   padding: 0,
@@ -441,51 +526,75 @@ export function Dashboard({
                 }}
                 title="Whitelist settings"
               >
-                <Settings size={30} />
+                <Settings size={16} />
               </button>
             </>
           )}
-          <button
-            className="ui-button"
-            onClick={() => setShowTwitchEmbed((v) => !v)}
-            title={showTwitchEmbed ? "Hide the Twitch stream preview" : "Show the Twitch stream preview"}
+          <span
             style={{
-              background: showTwitchEmbed ? "var(--accent-surface)" : "none",
-              border: showTwitchEmbed ? "1px solid var(--accent-border)" : "1px solid #333",
-              color: showTwitchEmbed ? "var(--accent-text)" : "#ccc",
-              cursor: "pointer",
-              fontSize: 18,
-              padding: "2px 8px",
-              borderRadius: 4,
+              height: 30,
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "0 9px",
+              border: "1px solid #303036",
+              borderRadius: 5,
+              background: "#171719",
+              color: "#929aa7",
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
             }}
           >
-            {showTwitchEmbed ? "Hide Stream" : "Show Stream"}
-          </button>
+            Preview:{" "}
+            <strong style={{ color: "var(--accent-text)", marginLeft: 4 }}>
+              {twitchChannel.charAt(0).toUpperCase() + twitchChannel.slice(1)}
+            </strong>
+          </span>
           <button
-            className="ui-button"
-            onClick={() =>
-              setTwitchChannel((channel) =>
-                channel === "vicksy" ? "wixels" : "vicksy",
-              )
+            className="ui-icon-button"
+            onClick={() => setShowTwitchEmbed((v) => !v)}
+            title={
+              showTwitchEmbed
+                ? "Hide the Twitch stream preview"
+                : "Show the Twitch stream preview"
             }
             style={{
-              background: twitchChannel === "wixels" ? "var(--accent-surface)" : "none",
+              background: showTwitchEmbed ? "var(--accent-surface)" : "none",
+              border: showTwitchEmbed
+                ? "1px solid var(--accent-border)"
+                : "1px solid #333",
+              color: showTwitchEmbed ? "var(--accent-text)" : "#ccc",
+              cursor: "pointer",
+            }}
+          >
+            {showTwitchEmbed ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+          <button
+            className="ui-icon-button"
+            onClick={() => {
+              const nextChannel =
+                twitchChannel === "vicksy" ? "wixels" : "vicksy";
+              setTwitchChannel(nextChannel);
+              toast.info(
+                `Switching preview and chat listener to ${nextChannel}`,
+              );
+            }}
+            style={{
+              background:
+                twitchChannel === "wixels" ? "var(--accent-surface)" : "none",
               border:
                 twitchChannel === "wixels"
                   ? "1px solid var(--accent-border)"
                   : "1px solid #333",
               color: twitchChannel === "wixels" ? "var(--accent-text)" : "#ccc",
               cursor: "pointer",
-              fontSize: 18,
-              padding: "2px 8px",
-              borderRadius: 4,
             }}
-            title={`Currently showing ${twitchChannel}`}
+            title={`Switch preview from ${twitchChannel} to ${twitchChannel === "vicksy" ? "wixels" : "vicksy"}`}
           >
-            Switch to {twitchChannel === "vicksy" ? "Wixels" : "Vicksy"}
+            <Repeat2 size={15} />
           </button>
           <button
-            className="ui-button"
+            className="ui-icon-button"
             onClick={() => {
               refreshOverlay();
               toast.success("OBS overlay refresh requested");
@@ -495,16 +604,27 @@ export function Dashboard({
               border: "1px solid #444",
               color: "#ccc",
               cursor: "pointer",
-              fontSize: 18,
-              padding: "2px 8px",
-              borderRadius: 4,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
             }}
             title="Refresh OBS overlay (Refreshes the overlay on the streamers OBS)"
           >
-            <RotateCcw size={14} /> Overlay
+            <RotateCcw size={14} />
+          </button>
+          <button
+            className="ui-button"
+            onClick={() => setShowStudio((value) => !value)}
+            title={
+              showStudio
+                ? "Close production tools"
+                : "Open scenes, presets, sounds, and chat commands"
+            }
+            style={{
+              background: showStudio ? "var(--accent-surface)" : "#181818",
+              border: `1px solid ${showStudio ? "var(--accent-border)" : "#3a3a3a"}`,
+              color: showStudio ? "var(--accent-text)" : "#c2c8d0",
+              cursor: "pointer",
+            }}
+          >
+            <PanelRightOpen size={14} /> Studio
           </button>
         </div>
       </div>
@@ -525,6 +645,12 @@ export function Dashboard({
         }}
         onSaveDrawingAsElement={handleSaveDrawingAsElement}
         hasStrokes={strokes.length > 0}
+        selectedElement={selectedElement}
+        onElementChange={updateElement}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={historyStatus.canUndo}
+        canRedo={historyStatus.canRedo}
       />
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
@@ -550,21 +676,164 @@ export function Dashboard({
                 flexShrink: 0,
               }}
             >
+              <div
+                style={{
+                  display: "block",
+                  padding: "0 0 7px",
+                  marginBottom: 7,
+                  borderBottom: "1px solid #222",
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setActivityMenuOpen((open) => !open);
+                    setPresenceMenuOpen(false);
+                    setProfileMenuOpen(false);
+                  }}
+                  title="Show the complete activity history"
+                  aria-expanded={activityMenuOpen}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    width: "100%",
+                    minHeight: 32,
+                    padding: "0 7px",
+                    border: `1px solid ${activityMenuOpen ? "var(--accent-border)" : "#2d2d31"}`,
+                    borderRadius: 5,
+                    background: activityMenuOpen ? "var(--accent-surface)" : "#171719",
+                    color: "#aeb6c2",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <Activity size={13} color="var(--accent-text)" />
+                  <span style={{ fontSize: 11, fontWeight: 700 }}>
+                    Activity
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ color: "#7f8997", fontSize: 9 }}>
+                    {studio.activity.length} {activityMenuOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+              </div>
+              {activityMenuOpen && (
+                <div
+                  role="dialog"
+                  aria-label="Complete activity history"
+                  style={{
+                    position: "fixed",
+                    left: "calc(var(--sidebar-width) + 10px)",
+                    bottom: 16,
+                    width:
+                      "min(300px, calc(100vw - var(--sidebar-width) - 26px))",
+                    maxHeight: "min(440px, calc(100vh - 32px))",
+                    overflowY: "auto",
+                    padding: 7,
+                    background: "#181818",
+                    border: "1px solid #3a3a3f",
+                    borderRadius: 7,
+                    boxShadow: "0 12px 36px rgba(0,0,0,0.6)",
+                    zIndex: 3000,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      position: "sticky",
+                      top: -7,
+                      padding: "8px 4px",
+                      margin: "-7px -1px 3px",
+                      borderBottom: "1px solid #2a2a2a",
+                      background: "#181818",
+                      color: "#d1d5db",
+                    }}
+                  >
+                    <Activity size={14} color="var(--accent-text)" />
+                    <strong style={{ fontSize: 12 }}>All activity</strong>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ color: "#8d96a3", fontSize: 10 }}>
+                      {studio.activity.length}
+                    </span>
+                    <button
+                      className="ui-icon-button ui-button--compact"
+                      onClick={() => setActivityMenuOpen(false)}
+                      title="Close activity history"
+                      aria-label="Close activity history"
+                      style={{
+                        border: "1px solid #3a3a3f",
+                        background: "#222",
+                        color: "#cbd1da",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  {studio.activity.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: "flex",
+                        gap: 7,
+                        padding: "7px 4px",
+                        borderBottom: "1px solid #242424",
+                      }}
+                    >
+                      <Activity
+                        size={12}
+                        color="var(--accent-text)"
+                        style={{ marginTop: 2, flexShrink: 0 }}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            color: "#c8ced7",
+                            fontSize: 11,
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          <strong>{item.user}</strong> {item.action}
+                        </div>
+                        <small style={{ color: "#89919d", fontSize: 9 }}>
+                          {new Date(item.at).toLocaleString()}
+                        </small>
+                      </div>
+                    </div>
+                  ))}
+                  {studio.activity.length === 0 && (
+                    <div
+                      style={{ padding: 10, color: "#707784", fontSize: 10 }}
+                    >
+                      No activity yet
+                    </div>
+                  )}
+                </div>
+              )}
               {presenceMenuOpen && (
                 <div
                   style={{
-                    position: "absolute",
-                    left: 8,
-                    right: 8,
-                    bottom: "calc(100% + 6px)",
-                    padding: 7,
+                    position: "fixed",
+                    left: "calc(var(--sidebar-width) + 10px)",
+                    bottom: 16,
+                    width: "min(320px, calc(100vw - var(--sidebar-width) - 26px))",
+                    maxHeight: "min(440px, calc(100vh - 32px))",
+                    overflowY: "auto",
+                    padding: 9,
                     background: "#181818",
                     border: "1px solid #333",
                     borderRadius: 6,
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-                    zIndex: 2000,
+                    zIndex: 3000,
                   }}
                 >
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 3px 8px", marginBottom: 7, borderBottom: "1px solid #2a2a2f" }}>
+                    <strong style={{ color: "#e2e5ea", fontSize: 12 }}>Connection status</strong>
+                    <span style={{ flex: 1 }} />
+                    <button className="ui-icon-button ui-button--compact" onClick={() => setPresenceMenuOpen(false)} title="Close connection status" aria-label="Close connection status" style={{ border: "1px solid #3a3a3f", background: "#222", color: "#cbd1da", cursor: "pointer" }}><X size={13}/></button>
+                  </div>
                   <div
                     style={{
                       display: "grid",
@@ -576,7 +845,9 @@ export function Dashboard({
                       color: "#b6beca",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 7 }}
+                    >
                       <span
                         style={{
                           width: 7,
@@ -588,7 +859,9 @@ export function Dashboard({
                       OBS overlay: {overlayConnected ? "online" : "offline"}
                       {overlayCount > 1 ? ` (${overlayCount} sources)` : ""}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 7 }}
+                    >
                       <span
                         style={{
                           width: 7,
@@ -597,7 +870,26 @@ export function Dashboard({
                           background: connected ? "#4ade80" : "#f87171",
                         }}
                       />
-                      Dashboard server: {connected ? "connected" : "disconnected"}
+                      Dashboard server:{" "}
+                      {connected ? "connected" : "disconnected"}
+                    </div>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 7 }}
+                    >
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: studio.twitchConnected
+                            ? "#4ade80"
+                            : "#f59e0b",
+                        }}
+                      />
+                      Chat listener:{" "}
+                      {studio.twitchConnected
+                        ? `listening to ${twitchChannel}`
+                        : `connecting to ${twitchChannel}`}
                     </div>
                   </div>
                   <div
@@ -663,6 +955,7 @@ export function Dashboard({
                 onClick={() => {
                   setPresenceMenuOpen((open) => !open);
                   setProfileMenuOpen(false);
+                  setActivityMenuOpen(false);
                 }}
                 title="Show OBS overlay status and everyone currently on the dashboard"
                 aria-expanded={presenceMenuOpen}
@@ -731,16 +1024,18 @@ export function Dashboard({
               {profileMenuOpen && (
                 <div
                   style={{
-                    position: "absolute",
+                    position: "fixed",
                     left: 8,
-                    right: 8,
-                    bottom: "calc(100% + 6px)",
+                    bottom: 60,
+                    width: "calc(var(--sidebar-width) - 16px)",
+                    maxHeight: "calc(100vh - 80px)",
+                    overflowY: "auto",
                     padding: 6,
                     background: "#181818",
                     border: "1px solid #333",
                     borderRadius: 6,
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-                    zIndex: 2000,
+                    zIndex: 3000,
                   }}
                 >
                   <div
@@ -760,7 +1055,11 @@ export function Dashboard({
                         className="ui-button ui-button--compact"
                         key={option}
                         onClick={() => setTheme(option)}
-                        title={option === "fox" ? "Use the default Fox Orange accent" : "Use your custom accent color"}
+                        title={
+                          option === "fox"
+                            ? "Use the default Fox Orange accent"
+                            : "Use your custom accent color"
+                        }
                         style={{
                           flex: 1,
                           background:
@@ -783,165 +1082,201 @@ export function Dashboard({
                       </button>
                     ))}
                   </div>
-                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8, color: "#b6beca", fontSize: 10 }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      marginBottom: 8,
+                      color: "#b6beca",
+                      fontSize: 10,
+                    }}
+                  >
                     <span>Custom accent</span>
                     <input
                       type="color"
                       value={customAccent}
-                      onChange={(event) => { setCustomAccent(event.target.value); setTheme("custom"); }}
+                      onChange={(event) => {
+                        setCustomAccent(event.target.value);
+                        setTheme("custom");
+                      }}
                       title="Choose a custom dashboard accent color"
-                      style={{ width: 42, height: 26, padding: 2, border: "1px solid #3a3a3a", borderRadius: 5, background: "#111", cursor: "pointer" }}
+                      style={{
+                        width: 42,
+                        height: 26,
+                        padding: 2,
+                        border: "1px solid #3a3a3a",
+                        borderRadius: 5,
+                        background: "#111",
+                        cursor: "pointer",
+                      }}
                     />
                   </label>
-                  <div
-                    style={{
-                      padding: "7px 4px 5px",
-                      marginBottom: 7,
-                      borderTop: "1px solid #2a2a2a",
-                      borderBottom: "1px solid #2a2a2a",
-                    }}
-                  >
+                  {false && (
                     <div
                       style={{
-                        color: "#a3aab5",
-                        fontSize: 9,
-                        letterSpacing: "0.08em",
+                        padding: "7px 4px 5px",
                         marginBottom: 7,
+                        borderTop: "1px solid #2a2a2a",
+                        borderBottom: "1px solid #2a2a2a",
                       }}
                     >
-                      DVD CORNER SOUND
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        marginBottom: 7,
-                        color: "#b6beca",
-                        fontSize: 10,
-                      }}
-                    >
-                      <span>Volume</span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={dvdCelebrationSettings.volume}
-                        onChange={(event) =>
-                          setDvdCelebrationSettings({
-                            ...dvdCelebrationSettings,
-                            volume: Number(event.target.value),
-                          })
-                        }
-                        title="Set the DVD corner celebration sound volume"
+                      <div
                         style={{
-                          flex: 1,
-                          minWidth: 0,
-                          accentColor: "var(--accent-border)",
-                        }}
-                      />
-                      <span style={{ width: 30, textAlign: "right" }}>
-                        {Math.round(dvdCelebrationSettings.volume * 100)}%
-                      </span>
-                    </div>
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        marginBottom: 7,
-                        color: "#b6beca",
-                        fontSize: 10,
-                      }}
-                    >
-                      <span>Counter</span>
-                      <select
-                        value={dvdCelebrationSettings.counterPosition}
-                        onChange={(event) => {
-                          const counterPosition = event.target.value as typeof dvdCelebrationSettings.counterPosition;
-                          setDvdCelebrationSettings({
-                            ...dvdCelebrationSettings,
-                            counterPosition,
-                          });
-                          toast.success(
-                            `DVD counter moved to ${event.target.options[event.target.selectedIndex].text.toLowerCase()}`,
-                          );
-                        }}
-                        title="Choose where the DVD corner counter appears on OBS"
-                        style={{
-                          flex: 1,
-                          height: 28,
-                          padding: "0 7px",
-                          borderRadius: 4,
-                          border: "1px solid #3a3a3f",
-                          background: "#202020",
-                          color: "#d1d5db",
-                          font: "600 10px Inter,sans-serif",
-                          cursor: "pointer",
+                          color: "#a3aab5",
+                          fontSize: 9,
+                          letterSpacing: "0.08em",
+                          marginBottom: 7,
                         }}
                       >
-                        <option value="top-left">Top left</option>
-                        <option value="top-center">Top center</option>
-                        <option value="top-right">Top right</option>
-                        <option value="bottom-left">Bottom left</option>
-                        <option value="bottom-center">Bottom center</option>
-                        <option value="bottom-right">Bottom right</option>
-                      </select>
-                    </label>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-                      <label
-                        className="ui-button ui-button--compact"
-                        title="Upload an audio file for DVD corner celebrations"
+                        DVD CORNER SOUND
+                      </div>
+                      <div
                         style={{
-                          minWidth: 0,
-                          cursor: dvdSoundUploading ? "wait" : "pointer",
-                          background: dvdCelebrationSettings.soundUrl
-                            ? "var(--accent-surface-strong)"
-                            : "#202020",
-                          border: dvdCelebrationSettings.soundUrl
-                            ? "1px solid var(--accent-border)"
-                            : "1px solid #333",
-                          color: "#d1d5db",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 7,
+                          marginBottom: 7,
+                          color: "#b6beca",
+                          fontSize: 10,
                         }}
                       >
-                        {dvdSoundUploading
-                          ? "Uploading…"
-                          : dvdCelebrationSettings.soundUrl
-                            ? "Replace sound"
-                            : "Upload sound"}
+                        <span>Volume</span>
                         <input
-                          type="file"
-                          accept="audio/mpeg,audio/wav,audio/ogg,audio/webm"
-                          disabled={dvdSoundUploading}
-                          onChange={handleDvdSoundUpload}
-                          style={{ display: "none" }}
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={dvdCelebrationSettings.volume}
+                          onChange={(event) =>
+                            setDvdCelebrationSettings({
+                              ...dvdCelebrationSettings,
+                              volume: Number(event.target.value),
+                            })
+                          }
+                          title="Set the DVD corner celebration sound volume"
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            accentColor: "var(--accent-border)",
+                          }}
                         />
+                        <span style={{ width: 30, textAlign: "right" }}>
+                          {Math.round(dvdCelebrationSettings.volume * 100)}%
+                        </span>
+                      </div>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 7,
+                          marginBottom: 7,
+                          color: "#b6beca",
+                          fontSize: 10,
+                        }}
+                      >
+                        <span>Counter</span>
+                        <select
+                          value={dvdCelebrationSettings.counterPosition}
+                          onChange={(event) => {
+                            const counterPosition = event.target
+                              .value as typeof dvdCelebrationSettings.counterPosition;
+                            setDvdCelebrationSettings({
+                              ...dvdCelebrationSettings,
+                              counterPosition,
+                            });
+                            toast.success(
+                              `DVD counter moved to ${event.target.options[event.target.selectedIndex].text.toLowerCase()}`,
+                            );
+                          }}
+                          title="Choose where the DVD corner counter appears on overlay"
+                          style={{
+                            flex: 1,
+                            height: 28,
+                            padding: "0 7px",
+                            borderRadius: 4,
+                            border: "1px solid #3a3a3f",
+                            background: "#202020",
+                            color: "#d1d5db",
+                            font: "600 10px Inter,sans-serif",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <option value="top-left">Top left</option>
+                          <option value="top-center">Top center</option>
+                          <option value="top-right">Top right</option>
+                          <option value="bottom-left">Bottom left</option>
+                          <option value="bottom-center">Bottom center</option>
+                          <option value="bottom-right">Bottom right</option>
+                        </select>
                       </label>
-                      <button
-                        className="ui-button ui-button--compact"
-                        onClick={() =>
-                          {
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 5,
+                        }}
+                      >
+                        <label
+                          className="ui-button ui-button--compact"
+                          title="Upload an audio file for DVD corner celebrations"
+                          style={{
+                            minWidth: 0,
+                            cursor: dvdSoundUploading ? "wait" : "pointer",
+                            background: dvdCelebrationSettings.soundUrl
+                              ? "var(--accent-surface-strong)"
+                              : "#202020",
+                            border: dvdCelebrationSettings.soundUrl
+                              ? "1px solid var(--accent-border)"
+                              : "1px solid #333",
+                            color: "#d1d5db",
+                          }}
+                        >
+                          {dvdSoundUploading
+                            ? "Uploading…"
+                            : dvdCelebrationSettings.soundUrl
+                              ? "Replace sound"
+                              : "Upload sound"}
+                          <input
+                            type="file"
+                            accept="audio/mpeg,audio/wav,audio/ogg,audio/webm"
+                            disabled={dvdSoundUploading}
+                            onChange={handleDvdSoundUpload}
+                            style={{ display: "none" }}
+                          />
+                        </label>
+                        <button
+                          className="ui-button ui-button--compact"
+                          onClick={() => {
                             setDvdCelebrationSettings({
                               ...dvdCelebrationSettings,
                               soundUrl: null,
                             });
-                            toast.success("Using the built-in DVD corner chime");
-                          }
-                        }
-                        disabled={!dvdCelebrationSettings.soundUrl}
-                        title="Use the built-in three-note corner chime"
-                        style={{
-                          minWidth: 0,
-                          background: dvdCelebrationSettings.soundUrl ? "#202020" : "var(--accent-surface-strong)",
-                          border: dvdCelebrationSettings.soundUrl ? "1px solid #333" : "1px solid var(--accent-border)",
-                          color: dvdCelebrationSettings.soundUrl ? "#b6beca" : "var(--accent-text)",
-                        }}
-                      >
-                        Built-in chime
-                      </button>
+                            toast.success(
+                              "Using the built-in DVD corner chime",
+                            );
+                          }}
+                          disabled={!dvdCelebrationSettings.soundUrl}
+                          title="Use the built-in three-note corner chime"
+                          style={{
+                            minWidth: 0,
+                            background: dvdCelebrationSettings.soundUrl
+                              ? "#202020"
+                              : "var(--accent-surface-strong)",
+                            border: dvdCelebrationSettings.soundUrl
+                              ? "1px solid #333"
+                              : "1px solid var(--accent-border)",
+                            color: dvdCelebrationSettings.soundUrl
+                              ? "#b6beca"
+                              : "var(--accent-text)",
+                          }}
+                        >
+                          Built-in chime
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div style={{ display: "grid", gap: 7 }}>
                     <button
                       className="ui-button ui-button--compact"
@@ -950,8 +1285,8 @@ export function Dashboard({
                         setShowCursorOnOverlay(visible);
                         toast.success(
                           visible
-                            ? "Your cursor is now visible on OBS"
-                            : "Your cursor is now hidden from OBS",
+                            ? "Your cursor is now visible on overlay"
+                            : "Your cursor is now hidden from overlay",
                         );
                       }}
                       title="Choose whether your cursor is visible on the OBS stream overlay; dashboard users always see it"
@@ -959,12 +1294,18 @@ export function Dashboard({
                       style={{
                         width: "100%",
                         justifyContent: "space-between",
-                        background: showCursorOnOverlay ? "var(--accent-surface-strong)" : "#202020",
-                        border: showCursorOnOverlay ? "1px solid var(--accent-border)" : "1px solid #333",
-                        color: showCursorOnOverlay ? "var(--accent-text)" : "#b6beca",
+                        background: showCursorOnOverlay
+                          ? "var(--accent-surface-strong)"
+                          : "#202020",
+                        border: showCursorOnOverlay
+                          ? "1px solid var(--accent-border)"
+                          : "1px solid #333",
+                        color: showCursorOnOverlay
+                          ? "var(--accent-text)"
+                          : "#b6beca",
                       }}
                     >
-                      <span>Show my cursor on OBS</span>
+                      <span>Show my cursor on overlay</span>
                       <span>{showCursorOnOverlay ? "On" : "Off"}</span>
                     </button>
                     <button
@@ -992,9 +1333,14 @@ export function Dashboard({
                 onClick={() => {
                   setProfileMenuOpen((open) => !open);
                   setPresenceMenuOpen(false);
+                  setActivityMenuOpen(false);
                 }}
                 aria-expanded={profileMenuOpen}
-                title={profileMenuOpen ? "Close account menu" : "Open account menu and settings"}
+                title={
+                  profileMenuOpen
+                    ? "Close account menu"
+                    : "Open account menu and settings"
+                }
                 style={{
                   width: "100%",
                   display: "flex",
@@ -1083,6 +1429,35 @@ export function Dashboard({
                 onLiveStroke={sendLiveStroke}
               />
             }
+          />
+          <HelpGuide />
+        </div>
+        <div
+          className={`studio-panel-shell${showStudio ? " studio-panel-shell--open" : ""}`}
+          aria-hidden={!showStudio}
+        >
+          <StudioPanel
+            studio={studio}
+            elements={elements}
+            selectedIds={selectedIds}
+            isOwner={user.isOwner}
+            onClose={() => setShowStudio(false)}
+            onSaveScene={saveScene}
+            onLoadScene={loadScene}
+            onDeleteScene={deleteScene}
+            onSavePreset={savePreset}
+            onLoadPreset={loadPreset}
+            onDeletePreset={deletePreset}
+            onSaveSound={saveSound}
+            onDeleteSound={deleteSound}
+            onPreviewSound={previewSound}
+            onPlaySound={playSound}
+            onSaveTrigger={saveTrigger}
+            onDeleteTrigger={deleteTrigger}
+            dvdCelebrationSettings={dvdCelebrationSettings}
+            dvdSoundUploading={dvdSoundUploading}
+            onDvdSettingsChange={setDvdCelebrationSettings}
+            onDvdSoundUpload={handleDvdSoundUpload}
           />
         </div>
       </div>

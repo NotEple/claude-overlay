@@ -2,6 +2,7 @@ import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
 import { mkdirSync } from 'fs';
 import path from 'path';
+import type { ElementPreset, OverlayTrigger, SavedScene, SoundboardItem } from '../types.js';
 
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
 mkdirSync(DATA_DIR, { recursive: true });
@@ -15,11 +16,20 @@ interface WhitelistEntry {
 
 interface DbSchema {
   whitelist: WhitelistEntry[];
+  scenes: SavedScene[];
+  presets: ElementPreset[];
+  sounds: SoundboardItem[];
+  triggers: OverlayTrigger[];
+  twitchAuth?: { encryptedAccessToken: string; encryptedRefreshToken: string; expiresAt: number; userId: string };
 }
 
 const adapter = new JSONFile<DbSchema>(path.join(DATA_DIR, 'db.json'));
-const db = new Low<DbSchema>(adapter, { whitelist: [] });
+const db = new Low<DbSchema>(adapter, { whitelist: [], scenes: [], presets: [], sounds: [], triggers: [] });
 await db.read();
+db.data.scenes ??= [];
+db.data.presets ??= [];
+db.data.sounds ??= [];
+db.data.triggers ??= [];
 
 export function getWhitelist(): WhitelistEntry[] {
   return db.data.whitelist;
@@ -46,5 +56,23 @@ export async function setAdmin(username: string, isAdmin: boolean): Promise<void
 
 export async function removeFromWhitelist(username: string): Promise<void> {
   db.data.whitelist = db.data.whitelist.filter((e) => e.username.toLowerCase() !== username.toLowerCase());
+  await db.write();
+}
+
+export function getStudioData() {
+  return { scenes: db.data.scenes, presets: db.data.presets, sounds: db.data.sounds, triggers: db.data.triggers };
+}
+
+export async function saveStudioData(data: Partial<ReturnType<typeof getStudioData>>): Promise<void> {
+  if (data.scenes) db.data.scenes = data.scenes;
+  if (data.presets) db.data.presets = data.presets;
+  if (data.sounds) db.data.sounds = data.sounds;
+  if (data.triggers) db.data.triggers = data.triggers;
+  await db.write();
+}
+
+export function getStoredTwitchAuth() { return db.data.twitchAuth; }
+export async function setStoredTwitchAuth(value: DbSchema['twitchAuth']): Promise<void> {
+  db.data.twitchAuth = value;
   await db.write();
 }

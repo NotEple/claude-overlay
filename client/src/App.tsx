@@ -3,11 +3,19 @@ import { useAuth } from "./hooks/useAuth";
 import { Dashboard } from "./views/Dashboard";
 import { Overlay } from "./views/Overlay";
 import { LoginPage } from "./views/LoginPage";
-import TileController from "./components/TileController";
 import { ToastProvider } from "./components/ToastProvider";
+import vicksySpin from "./assets/vicksySpin.gif";
+import TileController from "./components/TileController";
 
 export default function App() {
-  if (window.location.pathname === "/overlay") return <Overlay />;
+  if (window.location.pathname === "/overlay") {
+    return (
+      <ToastProvider>
+        <TileController channel="vicksy" />
+        <Overlay />
+      </ToastProvider>
+    );
+  }
   return (
     <ToastProvider>
       <DashboardApp />
@@ -17,41 +25,20 @@ export default function App() {
 
 function DashboardApp() {
   const { user, loading, login, logout, refreshUser } = useAuth();
-  const error = new URLSearchParams(window.location.search).get("error");
+  const searchParams = new URLSearchParams(window.location.search);
+  const error = searchParams.get("error");
+  const previewLoading = searchParams.get("preview") === "loading";
 
   const handleSessionRevoked = () => {
     window.location.href = "/login?error=session_revoked";
   };
 
-  if (loading) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#0d0d0d",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "var(--accent-text)",
-            animation: "pulse 1s infinite",
-          }}
-        />
-      </div>
-    );
-  }
+  if (loading || previewLoading) return <LoadingScreen />;
 
   if (!user) return <LoginPage onLogin={login} error={error} />;
 
   return (
     <>
-      <TileController />
       <Dashboard
         user={user}
         onLogout={logout}
@@ -59,5 +46,21 @@ function DashboardApp() {
         onRoleUpdated={refreshUser}
       />
     </>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <main className="loading-screen" aria-live="polite" aria-busy="true">
+      <div className="loading-screen__glow" />
+      <div className="loading-screen__content">
+        <img src={vicksySpin} alt="Vicksy spinning while the overlay loads" />
+        <div>
+          <h1>Loading Vicksy’s overlay…</h1>
+          <p>Waking the server and checking your access. This can take a moment.</p>
+        </div>
+        <div className="loading-screen__progress"><span /></div>
+      </div>
+    </main>
   );
 }

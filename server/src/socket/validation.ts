@@ -6,7 +6,9 @@ const UPDATE_KEYS = new Set<keyof CanvasElement>([
   "visible", "zIndex", "groupId", "mediaCurrentTime", "mediaPaused", "mediaVolume",
   "autoVisibility",
   "dvdEnabled", "dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY",
+  "locked", "opacity", "enterAnimation", "exitAnimation",
 ]);
+const ANIMATIONS = new Set(["none", "fade", "pop", "slide-left", "slide-right", "slide-up", "slide-down", "spin"]);
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const boundedString = (value: unknown, max: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= max;
@@ -21,6 +23,10 @@ export function validElement(element: CanvasElement): boolean {
     && typeof element.visible === "boolean" && finite(element.zIndex)
     && (element.autoVisibility === undefined || typeof element.autoVisibility === "boolean")
     && (element.dvdEnabled === undefined || typeof element.dvdEnabled === "boolean")
+    && (element.locked === undefined || typeof element.locked === "boolean")
+    && (element.opacity === undefined || (finite(element.opacity) && element.opacity >= 0 && element.opacity <= 1))
+    && (element.enterAnimation === undefined || ANIMATIONS.has(element.enterAnimation))
+    && (element.exitAnimation === undefined || ANIMATIONS.has(element.exitAnimation))
     && [element.dvdStartedAt, element.dvdStartX, element.dvdStartY, element.dvdVelocityX, element.dvdVelocityY]
       .every((value) => value === undefined || finite(value));
 }
@@ -41,6 +47,10 @@ export function validElementUpdate(changes: Partial<CanvasElement>): boolean {
   if ("mediaPaused" in candidate && typeof candidate.mediaPaused !== "boolean") return false;
   if ("autoVisibility" in candidate && typeof candidate.autoVisibility !== "boolean") return false;
   if ("dvdEnabled" in candidate && typeof candidate.dvdEnabled !== "boolean") return false;
+  if ("locked" in candidate && typeof candidate.locked !== "boolean") return false;
+  if ("opacity" in candidate && (!finite(candidate.opacity) || (candidate.opacity as number) < 0 || (candidate.opacity as number) > 1)) return false;
+  if ("enterAnimation" in candidate && !ANIMATIONS.has(candidate.enterAnimation as string)) return false;
+  if ("exitAnimation" in candidate && !ANIMATIONS.has(candidate.exitAnimation as string)) return false;
   for (const key of ["dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY"] as const) {
     if (key in candidate && !finite(candidate[key])) return false;
   }

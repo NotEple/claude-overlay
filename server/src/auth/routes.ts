@@ -98,7 +98,8 @@ authRouter.get("/callback", async (req, res) => {
   }
 
   try {
-    const accessToken = await exchangeCode(code);
+    const tokenSet = await exchangeCode(code);
+    const accessToken = tokenSet.accessToken;
     const twitchUser = await getTwitchUserFromToken(accessToken);
     const login = twitchUser.login.toLowerCase();
 
@@ -152,7 +153,9 @@ authRouter.post("/logout", (_req, res) => {
 
 authRouter.get("/live", async (req, res) => {
   try {
-    const live = await isStreamerLive("vicksy");
+    const requestedChannel = String(req.query.channel ?? "vicksy").toLowerCase();
+    const channel = requestedChannel === "wixels" ? "wixels" : "vicksy";
+    const live = await isStreamerLive(channel);
     res.json({ live });
   } catch (err) {
     console.error(err);

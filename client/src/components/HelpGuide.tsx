@@ -1,0 +1,274 @@
+import { useEffect, useState } from "react";
+import { HelpCircle, X } from "lucide-react";
+
+const sections = [
+  {
+    title: "Move, select & resize",
+    items: [
+      [
+        "Left-drag an element",
+        "Move it. Selected grouped elements move together.",
+      ],
+      ["Alt + drag", "Temporarily disable edge and center snapping."],
+      ["Drag a resize handle", "Resize from that edge or corner."],
+      ["Right-drag an element", "Rotate it around its center."],
+      ["Click an element", "Select it and show its editing controls."],
+      [
+        "Shift / Ctrl / Cmd + click",
+        "Add or remove an element from the selection.",
+      ],
+      [
+        "Drag empty background",
+        "Draw a selection box around multiple elements.",
+      ],
+      ["Click empty background", "Clear the current selection."],
+      ["Double-click text", "Open the text editor."],
+      ["Delete / Backspace", "Delete selected unlocked elements."],
+    ],
+  },
+  {
+    title: "Navigate the workspace",
+    items: [
+      ["Middle-mouse drag", "Pan around the workspace."],
+      ["Mouse wheel", "Zoom toward or away from the pointer."],
+      ["% · Fit", "Center the 1920×1080 stream area and reset its zoom."],
+    ],
+  },
+  {
+    title: "Keyboard shortcuts",
+    items: [
+      ["Ctrl / Cmd + Z", "Undo the latest shared canvas change."],
+      ["Ctrl / Cmd + Shift + Z", "Redo the latest undone change."],
+      ["Ctrl / Cmd + Y", "Redo on Windows."],
+      ["Ctrl / Cmd + C", "Copy the selected elements."],
+      ["Ctrl / Cmd + V", "Paste copies with a small position offset."],
+    ],
+  },
+  {
+    title: "Top toolbar",
+    items: [
+      ["Media", "Upload an image, GIF, video, or audio file."],
+      ["Text", "Create a styled text element."],
+      ["Draw", "Open Pen, Erase, Fill, brush size, and drawing controls."],
+      ["Add as Element", "Turn the current drawing into movable media."],
+      ["Fit / Fill", "Fit inside the stream area, or cover it completely."],
+      ["DVD", "Start or stop bouncing movement for the selected element."],
+      [
+        "Flip X / Flip Y",
+        "Mirror selected visual media horizontally or vertically.",
+      ],
+      ["Auto", "For video: show on play, then hide when playback ends."],
+    ],
+  },
+  {
+    title: "Layers, video & stream",
+    items: [
+      ["Eye / eye-off", "Show or hide a layer on the OBS overlay."],
+      ["Lock", "Prevent accidental movement, resizing, and deletion."],
+      ["Group", "Keep multiple selected layers moving together."],
+      [
+        "Video body",
+        "Click to play or pause; drag to move. Native controls stay at the bottom.",
+      ],
+      ["Preview eye", "Show or hide the Twitch preview only on the dashboard."],
+      [
+        "Switch preview",
+        "Switch both the preview and chat command listener between Vicksy and Wixels.",
+      ],
+      ["Refresh overlay", "Ask connected overlay browser sources to reload."],
+      ["Studio", "Open scenes, presets, sounds, commands, and DVD effects."],
+    ],
+  },
+];
+
+export function HelpGuide() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        className="ui-icon-button"
+        onClick={() => setOpen(true)}
+        title="Open controls and shortcuts guide"
+        aria-label="Open controls and shortcuts guide"
+        style={{
+          position: "absolute",
+          right: 14,
+          bottom: 12,
+          width: 34,
+          height: 34,
+          zIndex: 2500,
+          borderRadius: "50%",
+          border: "1px solid var(--accent-border)",
+          background: "var(--accent-solid)",
+          color: "var(--accent-contrast)",
+          boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
+          cursor: "pointer",
+        }}
+      >
+        <HelpCircle size={18} />
+      </button>
+
+      {open && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setOpen(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 5000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "rgba(0,0,0,0.68)",
+            backdropFilter: "blur(3px)",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="controls-guide-title"
+            style={{
+              width: "min(820px, calc(100vw - 40px))",
+              maxHeight: "min(760px, calc(100vh - 40px))",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              background: "#151517",
+              border: "1px solid #3a3a40",
+              borderRadius: 10,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.65)",
+            }}
+          >
+            <div
+              style={{
+                minHeight: 52,
+                padding: "0 14px 0 18px",
+                display: "flex",
+                alignItems: "center",
+                borderBottom: "1px solid #2c2c31",
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div
+                  id="controls-guide-title"
+                  style={{ color: "#f3f4f6", fontSize: 16, fontWeight: 700 }}
+                >
+                  Controls & shortcuts
+                </div>
+                <div style={{ marginTop: 2, color: "#9299a5", fontSize: 11 }}>
+                  A quick guide to editing the Vicksy overlay
+                </div>
+              </div>
+              <button
+                className="ui-icon-button"
+                onClick={() => setOpen(false)}
+                title="Close guide (Escape)"
+                aria-label="Close controls guide"
+                style={{
+                  background: "#202024",
+                  border: "1px solid #3b3b42",
+                  color: "#d5d8df",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div
+              style={{
+                overflowY: "auto",
+                padding: 18,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                gap: 14,
+              }}
+            >
+              {sections.map((section) => (
+                <section
+                  key={section.title}
+                  style={{
+                    padding: 13,
+                    background: "#1b1b1e",
+                    border: "1px solid #303036",
+                    borderRadius: 8,
+                  }}
+                >
+                  <h3
+                    style={{
+                      margin: "0 0 10px",
+                      color: "var(--accent-text)",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      letterSpacing: "0.045em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {section.title}
+                  </h3>
+                  <div style={{ display: "grid", gap: 9 }}>
+                    {section.items.map(([control, description]) => (
+                      <div
+                        key={control}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "minmax(112px, 0.72fr) minmax(0, 1.4fr)",
+                          gap: 10,
+                          alignItems: "start",
+                        }}
+                      >
+                        <kbd
+                          style={{
+                            minHeight: 24,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            width: "fit-content",
+                            maxWidth: "100%",
+                            padding: "3px 7px",
+                            color: "#e7e9ed",
+                            background: "#25252a",
+                            border: "1px solid #44444c",
+                            borderBottomWidth: 2,
+                            borderRadius: 5,
+                            fontFamily: "Inter, sans-serif",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            lineHeight: 1.35,
+                          }}
+                        >
+                          {control}
+                        </kbd>
+                        <span
+                          style={{
+                            color: "#b4bac4",
+                            fontSize: 11,
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {description}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

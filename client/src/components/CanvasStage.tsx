@@ -49,6 +49,8 @@ import {
   FlipHorizontal2,
   FlipVertical2,
   RefreshCw,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -58,8 +60,6 @@ import {
   WORKSPACE_H,
   STREAM_OFFSET_X,
   STREAM_OFFSET_Y,
-  SPAWN_X,
-  SPAWN_Y,
   parseTextSrc,
   getFileLabel,
 } from "../canvas/config";
@@ -88,6 +88,17 @@ export {
 /** Renders a Lucide icon to an SVG string for use in imperatively-built DOM nodes. */
 function iconHTML(Icon: LucideIcon, size = 14): string {
   return renderToStaticMarkup(<Icon size={size} strokeWidth={2} />);
+}
+
+function animationFrames(name: CanvasElement['enterAnimation']): Keyframe[] {
+  const end = { opacity: 1, transform: 'translate(0, 0) scale(1) rotate(0deg)' };
+  const starts: Record<string, Keyframe> = {
+    fade: { opacity: 0 }, pop: { opacity: 0, transform: 'scale(.55)' },
+    'slide-left': { opacity: 0, transform: 'translateX(-80px)' }, 'slide-right': { opacity: 0, transform: 'translateX(80px)' },
+    'slide-up': { opacity: 0, transform: 'translateY(-80px)' }, 'slide-down': { opacity: 0, transform: 'translateY(80px)' },
+    spin: { opacity: 0, transform: 'scale(.65) rotate(-180deg)' }, none: end,
+  };
+  return [starts[name ?? 'fade'] ?? starts.fade, end];
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +132,7 @@ function addResizeHandle(
   pos: HandlePos,
   getZoom: () => number,
   onUpdate: (changes: Partial<CanvasElement>) => void,
+  canResize: () => boolean = () => true,
 ) {
   const btn = document.createElement("div");
   btn.className = `rh rh-${pos}`;
@@ -132,6 +144,7 @@ function addResizeHandle(
 
   btn.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
+    if (!canResize()) return;
     e.stopPropagation();
     e.preventDefault();
     // Keep all resize events targeted at this handle even when the pointer
@@ -142,6 +155,9 @@ function addResizeHandle(
     const startY = e.clientY;
     const startW = container.offsetWidth;
     const startH = container.offsetHeight;
+    const startScale = getScale(container);
+    const startSignX = startScale.x < 0 ? -1 : 1;
+    const startSignY = startScale.y < 0 ? -1 : 1;
     const startLeft = parseFloat(container.style.left) || 0;
     const startTop = parseFloat(container.style.top) || 0;
     let lastEmit = 0;
@@ -158,8 +174,8 @@ function addResizeHandle(
         newH = startH;
       let newLeft = startLeft,
         newTop = startTop;
-      let newSX = 1,
-        newSY = 1;
+      let newSX = startSignX,
+        newSY = startSignY;
 
       const hasRight = pos === "tr" || pos === "mr" || pos === "br";
       const hasLeft = pos === "tl" || pos === "ml" || pos === "bl";
@@ -169,11 +185,11 @@ function addResizeHandle(
         if (rightEdge >= startLeft) {
           newW = Math.max(1, rightEdge - startLeft);
           newLeft = startLeft;
-          newSX = 1;
+          newSX = startSignX;
         } else {
           newW = Math.max(1, startLeft - rightEdge);
           newLeft = rightEdge;
-          newSX = -1;
+          newSX = -startSignX;
         }
       } else if (hasLeft) {
         const rightEdge = startLeft + startW;
@@ -181,11 +197,11 @@ function addResizeHandle(
         if (leftEdge <= rightEdge) {
           newW = Math.max(1, rightEdge - leftEdge);
           newLeft = leftEdge;
-          newSX = 1;
+          newSX = startSignX;
         } else {
           newW = Math.max(1, leftEdge - rightEdge);
           newLeft = rightEdge;
-          newSX = -1;
+          newSX = -startSignX;
         }
       }
 
@@ -197,11 +213,11 @@ function addResizeHandle(
         if (bottomEdge >= startTop) {
           newH = Math.max(1, bottomEdge - startTop);
           newTop = startTop;
-          newSY = 1;
+          newSY = startSignY;
         } else {
           newH = Math.max(1, startTop - bottomEdge);
           newTop = bottomEdge;
-          newSY = -1;
+          newSY = -startSignY;
         }
       } else if (hasTop) {
         const bottomEdge = startTop + startH;
@@ -209,11 +225,11 @@ function addResizeHandle(
         if (topEdge <= bottomEdge) {
           newH = Math.max(1, bottomEdge - topEdge);
           newTop = topEdge;
-          newSY = 1;
+          newSY = startSignY;
         } else {
           newH = Math.max(1, topEdge - bottomEdge);
           newTop = bottomEdge;
-          newSY = -1;
+          newSY = -startSignY;
         }
       }
 
@@ -276,14 +292,24 @@ function makeDraggable(
     onDragStart?: () => void;
     onDragEnd?: () => void;
     onSnapGuides?: (guideX?: number, guideY?: number) => void;
+    canInteract?: () => boolean;
   } = {},
 ) {
   el.addEventListener(
     "mousedown",
     (e) => {
+      if (options.canInteract && !options.canInteract()) return;
       if ((e.target as HTMLElement).classList.contains("rh")) return;
-      if ((e.target as HTMLElement).closest("button, input, audio, video, .rh"))
-        return;
+      const eventTarget = e.target as HTMLElement;
+      const targetVideo = eventTarget.closest("video");
+      if (eventTarget.closest("button, input, audio, .rh")) return;
+      // Native video controls live in the bottom strip. Leave that area fully
+      // interactive; the rest of the video supports click-to-play or
+      // movement-threshold dragging.
+      if (targetVideo) {
+        const videoRect = targetVideo.getBoundingClientRect();
+        if (e.clientY >= videoRect.bottom - Math.min(48, videoRect.height * 0.3)) return;
+      }
 
       // Right-click = rotate
       if (e.button === 2) {
@@ -328,7 +354,7 @@ function makeDraggable(
 
       if (e.button !== 0) return;
 
-      e.preventDefault();
+      if (!targetVideo) e.preventDefault();
       e.stopPropagation();
 
       const startX = e.clientX;
@@ -347,6 +373,7 @@ function makeDraggable(
         const dy = (ev.clientY - startY) / zoom;
         if (!didDrag && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) {
           didDrag = true;
+          ev.preventDefault();
           options.onDragStart?.();
         }
         if (!didDrag) return;
@@ -567,6 +594,7 @@ function createMediaElement(
   if (type === "video") {
     const video = document.createElement("video");
     video.src = src;
+    video.draggable = false;
     video.volume = el.mediaVolume ?? 0.25;
     video.preload = "auto";
 
@@ -587,8 +615,8 @@ function createMediaElement(
     }
 
     // Dashboard: use the browser player for reliable, accessible playback.
-    // A small dashboard-only handle preserves canvas dragging without covering
-    // the player controls or changing the OBS-rendered video.
+    // Dashboard-only editing surface: drag anywhere above the native control
+    // strip, while genuine clicks are forwarded to play/pause below.
     video.controls = true;
     video.style.cssText =
       "width:100%;height:100%;object-fit:contain;display:block;background:transparent;";
@@ -624,17 +652,13 @@ function createMediaElement(
     dragHandle.className = "video-drag-handle";
     dragHandle.title = "Drag to move · Right-drag to rotate";
     dragHandle.style.cssText =
-      "position:absolute;top:0;left:0;right:0;bottom:44px;z-index:2;" +
-      "display:flex;align-items:flex-start;justify-content:center;padding-top:6px;" +
+      "position:absolute;top:0;left:0;right:0;bottom:48px;z-index:2;" +
       "cursor:move;user-select:none;box-sizing:border-box;";
-
-    const dragLabel = document.createElement("span");
-    dragLabel.textContent = "Drag";
-    dragLabel.style.cssText =
-      "padding:3px 12px;border-radius:999px;background:rgba(15,23,42,.78);" +
-      "border:1px solid rgba(148,163,184,.45);color:#e2e8f0;" +
-      "font:10px Inter,sans-serif;pointer-events:none;";
-    dragHandle.appendChild(dragLabel);
+    dragHandle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (video.paused) void video.play().catch(() => {});
+      else video.pause();
+    });
     wrap.appendChild(dragHandle);
     return wrap;
   }
@@ -995,39 +1019,6 @@ export function ElementPanel({
               : moveSlot(slotIdx, "down"),
           )}
         </div>
-        {el.type === "video" && (
-          <button
-            className="ui-button ui-button--compact"
-            title={
-              el.autoVisibility
-                ? "Auto show is on: play shows the video and ending hides it"
-                : "Automatically show on play and hide when the video ends"
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              onElementChange(el.id, {
-                autoVisibility: !el.autoVisibility,
-              });
-            }}
-            style={{
-              background: el.autoVisibility
-                ? "var(--accent-surface-strong)"
-                : "none",
-              border: el.autoVisibility
-                ? "1px solid var(--accent-border)"
-                : "1px solid #333",
-              borderRadius: 3,
-              cursor: "pointer",
-              padding: "1px 4px",
-              color: el.autoVisibility ? "var(--accent-text)" : "#555",
-              flexShrink: 0,
-              fontSize: 8,
-              fontFamily: "Inter,sans-serif",
-            }}
-          >
-            AUTO
-          </button>
-        )}
         <button
           className="ui-icon-button ui-button--compact"
           title={
@@ -1100,8 +1091,8 @@ export function ElementPanel({
       >
         <span>LAYERS</span>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 4 }}>
-          {selectedElement && (
-            <>
+          {selectedElement && !selectedElement.locked && (
+            <span style={{ display: "none" }}>
               <button
                 className="ui-button ui-button--compact"
                 onClick={() => fitSelectedToStream("fit")}
@@ -1177,7 +1168,7 @@ export function ElementPanel({
                   <button className="ui-icon-button ui-button--compact" onClick={() => flipSelected("y")} title="Flip selected media top to bottom" style={{ background: "#1e2030", border: "1px solid #334", color: "var(--accent-text)", cursor: "pointer" }}><FlipVertical2 size={12} /></button>
                 </>
               )}
-            </>
+            </span>
           )}
           {canGroup && !anyGrouped && (
             <button
@@ -1217,7 +1208,7 @@ export function ElementPanel({
           )}
         </div>
       </div>
-      {selectedElement?.dvdEnabled && (
+      {selectedElement?.dvdEnabled && !selectedElement.locked && (
         <div
           style={{
             height: 34,
@@ -1265,6 +1256,18 @@ export function ElementPanel({
           >
             {dvdSpeed}
           </span>
+        </div>
+      )}
+      {selectedElement && (
+        <div style={{ padding: "8px 9px", display: "grid", gap: 7, borderBottom: "1px solid #242424", background: "#151515" }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="ui-button ui-button--compact" onClick={() => onElementChange(selectedElement.id, { locked: !selectedElement.locked })} title={selectedElement.locked ? "Unlock this element for editing" : "Lock this element to prevent accidental movement, resizing, or deletion"} style={{ flex: 1, background: selectedElement.locked ? "var(--accent-surface)" : "#202020", border: `1px solid ${selectedElement.locked ? "var(--accent-border)" : "#3a3a3a"}`, color: selectedElement.locked ? "var(--accent-text)" : "#bec5cf", cursor: "pointer" }}>{selectedElement.locked ? <Unlock size={12}/> : <Lock size={12}/>} {selectedElement.locked ? "Unlock" : "Lock"}</button>
+          </div>
+          <label style={{ display: "grid", gridTemplateColumns: "52px 1fr 34px", alignItems: "center", gap: 6, color: "#aeb6c2", fontSize: 10 }}><span>Opacity</span><input type="range" min="0" max="1" step="0.05" value={selectedElement.opacity ?? 1} onChange={(event) => onElementChange(selectedElement.id, { opacity: Number(event.target.value) })} style={{ minWidth: 0, accentColor: "var(--accent-border)" }}/><span style={{ textAlign: "right" }}>{Math.round((selectedElement.opacity ?? 1) * 100)}%</span></label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            <label style={{ display: "grid", gap: 3, color: "#8f99a8", fontSize: 9 }}>SHOW<select value={selectedElement.enterAnimation ?? "fade"} onChange={(event) => onElementChange(selectedElement.id, { enterAnimation: event.target.value as CanvasElement['enterAnimation'] })} style={{ height: 28, border: "1px solid #3a3a3a", borderRadius: 4, background: "#1d1d1f", color: "#d5dae2", fontSize: 10 }}>{["none","fade","pop","slide-left","slide-right","slide-up","slide-down","spin"].map(value => <option key={value}>{value}</option>)}</select></label>
+            <label style={{ display: "grid", gap: 3, color: "#8f99a8", fontSize: 9 }}>HIDE<select value={selectedElement.exitAnimation ?? "fade"} onChange={(event) => onElementChange(selectedElement.id, { exitAnimation: event.target.value as CanvasElement['exitAnimation'] })} style={{ height: 28, border: "1px solid #3a3a3a", borderRadius: 4, background: "#1d1d1f", color: "#d5dae2", fontSize: 10 }}>{["none","fade","pop","slide-left","slide-right","slide-up","slide-down","spin"].map(value => <option key={value}>{value}</option>)}</select></label>
+          </div>
         </div>
       )}
       <div style={{ flex: 1, overflowY: "auto" }}>
@@ -1498,7 +1501,11 @@ function useMarquee(
     const onDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
-      if (target !== workspace && !target.classList.contains("viewport-rect"))
+      if (
+        target !== workspace &&
+        !target.classList.contains("viewport-rect") &&
+        !target.classList.contains("canvas-interaction-surface")
+      )
         return;
 
       const rect = wrapper.getBoundingClientRect();
@@ -1630,13 +1637,11 @@ export function CanvasStage({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const nodeMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
+  const dashboardAudioContextRef = useRef<AudioContext | null>(null);
+  const dashboardSilencedVideosRef = useRef<WeakSet<HTMLVideoElement>>(new WeakSet());
   const volumeCommitTimersRef = useRef<Map<string, number>>(new Map());
   const groupBoxMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const twitchEmbedRef = useRef<HTMLDivElement>(null);
-  const twitchPointerShieldRef = useRef<HTMLDivElement>(null);
-  const twitchPointerShieldTimerRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
   const [twitchPointerShieldActive, setTwitchPointerShieldActive] =
     useState(false);
   const [twitchNeedsReconnect, setTwitchNeedsReconnect] = useState(false);
@@ -1848,7 +1853,12 @@ export function CanvasStage({
           applyNodeTransform(n);
         }
         if (changes.scaleX != null || changes.scaleY != null) {
-          setScale(n, changes.scaleX ?? 1, changes.scaleY ?? 1);
+          const currentScale = getScale(n);
+          setScale(
+            n,
+            changes.scaleX ?? currentScale.x,
+            changes.scaleY ?? currentScale.y,
+          );
           applyNodeTransform(n);
         }
         // Mark node so the DOM sync effect skips geometry this frame
@@ -1884,13 +1894,30 @@ export function CanvasStage({
         node.style.cssText =
           "position:absolute;cursor:move;transform-origin:center center;box-sizing:border-box;";
 
-        node.appendChild(
-          createMediaElement(el, {
+        const content = createMediaElement(el, {
             onMediaEvent: onMediaControl
               ? (action, currentTime) =>
                   onMediaControl(el.id, action, currentTime)
               : undefined,
-            onMediaReady: (media) => mediaElMap.set(el.id, media),
+            onMediaReady: (media) => {
+              mediaElMap.set(el.id, media);
+              if (media instanceof HTMLVideoElement && !dashboardSilencedVideosRef.current.has(media)) {
+                try {
+                  const context = dashboardAudioContextRef.current ?? new AudioContext();
+                  dashboardAudioContextRef.current = context;
+                  const source = context.createMediaElementSource(media);
+                  const silentOutput = context.createGain();
+                  silentOutput.gain.value = 0;
+                  source.connect(silentOutput).connect(context.destination);
+                  dashboardSilencedVideosRef.current.add(media);
+                } catch (error) {
+                  // Very old/restricted browsers may reject Web Audio routing.
+                  // Keep the dashboard silent even in that fallback case.
+                  media.muted = true;
+                  console.warn("Could not route dashboard video through silent output", error);
+                }
+              }
+            },
             onVolumeChange: (vol) => {
               const existing = volumeCommitTimersRef.current.get(el.id);
               if (existing !== undefined) window.clearTimeout(existing);
@@ -1907,8 +1934,9 @@ export function CanvasStage({
                 onElementChange(el.id, { visible });
               }
             },
-          }),
-        );
+          });
+        content.classList.add("element-content");
+        node.appendChild(content);
 
         // Selection border
         const selBorder = document.createElement("div");
@@ -1944,19 +1972,20 @@ export function CanvasStage({
               return;
             }
             onElementChange(el.id, changes);
-          });
+          }, () => !elementsRef.current.find((element) => element.id === el.id)?.locked);
         }
 
         // Delete button
         const deleteBtn = document.createElement("button");
         deleteBtn.innerHTML = iconHTML(X, 11);
         deleteBtn.style.cssText =
-          "position:absolute;top:-12px;right:-12px;background:#ef4444;color:white;border:none;cursor:pointer;width:18px;height:18px;z-index:30;border-radius:50%;display:none;align-items:center;justify-content:center;padding:0;";
+          "position:absolute;top:-25px;right:-25px;background:#dc2626;color:white;border:1px solid #f87171;cursor:pointer;width:20px;height:20px;z-index:30;border-radius:50%;display:none;align-items:center;justify-content:center;padding:0;line-height:0;box-sizing:border-box;box-shadow:0 2px 8px rgba(0,0,0,.45);";
         deleteBtn.className = "delete-btn";
         deleteBtn.title = "Permanently delete this element";
         deleteBtn.setAttribute("aria-label", "Delete element");
         deleteBtn.onclick = (e) => {
           e.stopPropagation();
+          if (elementsRef.current.find((element) => element.id === el.id)?.locked) return;
           onElementDelete(el.id);
         };
         node.appendChild(deleteBtn);
@@ -2004,7 +2033,7 @@ export function CanvasStage({
             const thisEl = elementsRef.current.find((e) => e.id === el.id);
             if (!thisEl?.groupId) return;
             for (const other of elementsRef.current) {
-              if (other.id === el.id || other.groupId !== thisEl.groupId)
+              if (other.id === el.id || other.groupId !== thisEl.groupId || other.locked)
                 continue;
               const otherNode = nodeMapRef.current.get(other.id);
               if (!otherNode) continue;
@@ -2034,6 +2063,7 @@ export function CanvasStage({
           {
             onDragStart,
             onDragEnd,
+            canInteract: () => !elementsRef.current.find((element) => element.id === el.id)?.locked,
             onSnapGuides: (guideX, guideY) => {
               const xGuide = snapXGuideRef.current;
               const yGuide = snapYGuideRef.current;
@@ -2068,7 +2098,8 @@ export function CanvasStage({
         node.style.width = el.width + "px";
         node.style.height = el.height + "px";
       }
-      node.style.opacity = el.visible ? "1" : "0.2";
+      node.style.opacity = el.visible ? String(el.opacity ?? 1) : "0.2";
+      node.style.cursor = el.locked ? "not-allowed" : "move";
       node.style.zIndex = String(el.zIndex);
       if (!recentlyDirect) {
         setScale(node, sx, sy);
@@ -2113,11 +2144,11 @@ export function CanvasStage({
       node.querySelector<HTMLElement>(".sel-border")!.style.display = isSelected
         ? "block"
         : "none";
-      node.querySelector<HTMLElement>(".delete-btn")!.style.display = isSelected
+      node.querySelector<HTMLElement>(".delete-btn")!.style.display = isSelected && !el.locked
         ? "flex"
         : "none";
       for (const h of node.querySelectorAll<HTMLElement>(".rh")) {
-        h.style.display = isSelected ? "block" : "none";
+        h.style.display = isSelected && !el.locked ? "block" : "none";
       }
     }
 
@@ -2175,6 +2206,8 @@ export function CanvasStage({
   useEffect(() => () => {
     volumeCommitTimersRef.current.forEach((timer) => window.clearTimeout(timer));
     volumeCommitTimersRef.current.clear();
+    void dashboardAudioContextRef.current?.close();
+    dashboardAudioContextRef.current = null;
   }, []);
 
   // Expose applyControl for incoming remote media:control events
@@ -2203,10 +2236,6 @@ export function CanvasStage({
   const reconnectTwitchPlayer = useCallback(() => {
     if (!showTwitchEmbed || !twitchChannel) return;
 
-    if (twitchPointerShieldTimerRef.current) {
-      clearTimeout(twitchPointerShieldTimerRef.current);
-      twitchPointerShieldTimerRef.current = null;
-    }
     // Invalidate events from the old player before removing its iframe.
     twitchSessionRef.current += 1;
     setTwitchPointerShieldActive(false);
@@ -2234,10 +2263,6 @@ export function CanvasStage({
     div.style.display = "block";
 
     if (twitchInitedRef.current) {
-      if (twitchPointerShieldTimerRef.current) {
-        clearTimeout(twitchPointerShieldTimerRef.current);
-        twitchPointerShieldTimerRef.current = null;
-      }
       setTwitchPointerShieldActive(false);
       twitchPlayerRef.current?.setChannel(twitchChannel);
       return;
@@ -2261,36 +2286,16 @@ export function CanvasStage({
       twitchHasPlayedRef.current = true;
       twitchNeedsReconnectRef.current = false;
       setTwitchNeedsReconnect(false);
-      if (twitchPointerShieldTimerRef.current) {
-        clearTimeout(twitchPointerShieldTimerRef.current);
-      }
-      twitchPointerShieldTimerRef.current = setTimeout(() => {
-        setTwitchPointerShieldActive(true);
-        twitchPointerShieldTimerRef.current = null;
-      }, 5000);
+      setTwitchPointerShieldActive(true);
     });
     player.addEventListener(Twitch.Player.PAUSE, () => {
       if (session !== twitchSessionRef.current) return;
-      if (twitchPointerShieldTimerRef.current) {
-        clearTimeout(twitchPointerShieldTimerRef.current);
-        twitchPointerShieldTimerRef.current = null;
-      }
-      setTwitchPointerShieldActive(false);
       if (twitchHasPlayedRef.current) {
         twitchNeedsReconnectRef.current = true;
         setTwitchNeedsReconnect(true);
       }
     });
   }, [showTwitchEmbed, twitchChannel, twitchPlayerGeneration]);
-
-  useEffect(
-    () => () => {
-      if (twitchPointerShieldTimerRef.current) {
-        clearTimeout(twitchPointerShieldTimerRef.current);
-      }
-    },
-    [],
-  );
 
   // Twitch may reject play() after a background-tab visibility pause. Rebuild
   // only its player when the tab returns instead of refreshing the dashboard.
@@ -2365,7 +2370,7 @@ export function CanvasStage({
           {twitchPointerShieldActive && (
             <div
               id="twitch-pointer-shield"
-              ref={twitchPointerShieldRef}
+              className="canvas-interaction-surface"
               style={{
                 position: "absolute",
                 inset: 0,
@@ -2441,26 +2446,13 @@ export function CanvasStage({
         style={{
           position: "absolute",
           bottom: 12,
-          right: 12,
+          right: 56,
           display: "flex",
           gap: 6,
           userSelect: "none",
           pointerEvents: "none",
         }}
       >
-        <span
-          style={{
-            background: "rgba(0,0,0,0.7)",
-            color: "#444",
-            fontSize: 10,
-            padding: "3px 8px",
-            borderRadius: 4,
-            fontFamily: "Inter,sans-serif",
-          }}
-        >
-          Drag bg to pan · Middle mouse to pan · Scroll to zoom · Right-drag to
-          rotate · Ctrl+C/V to copy/paste · Dbl-click text to edit · Del to remove
-        </span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {showTwitchEmbed && twitchNeedsReconnect && (
             <button
@@ -2545,12 +2537,14 @@ export const OverlayStage = forwardRef<
     liveStrokes?: Map<
       string,
       {
+        userId: string;
         points: Array<[number, number]>;
         color: string;
         size: number;
         eraser: boolean;
       }
     >;
+    onMediaEnded?: (id: string) => void;
   }
 >(function OverlayStage(
   {
@@ -2563,6 +2557,7 @@ export const OverlayStage = forwardRef<
     },
     strokes = [],
     liveStrokes,
+    onMediaEnded,
   },
   ref,
 ) {
@@ -2971,12 +2966,15 @@ export const OverlayStage = forwardRef<
         node.style.cssText =
           "position:absolute;transform-origin:center center;";
 
-        node.appendChild(
-          createMediaElement(el, {
+        const content = createMediaElement(el, {
             isOverlay: true,
             onMediaReady: (media) => mediaElMap.set(el.id, media),
-          }),
-        );
+            onVisibilityChange: (visible) => {
+              if (!visible) onMediaEnded?.(el.id);
+            },
+          });
+        content.classList.add("element-content");
+        node.appendChild(content);
 
         viewport.appendChild(node);
         const ox = el.x - STREAM_OFFSET_X,
@@ -2988,14 +2986,39 @@ export const OverlayStage = forwardRef<
         node.style.top = oy + "px";
         node.style.width = el.width + "px";
         node.style.height = el.height + "px";
-        node.style.transform = `rotate(${el.rotation ?? 0}deg) scaleX(${sx}) scaleY(${sy})`;
+        setScale(node, sx, sy);
+        setRotation(node, el.rotation ?? 0);
+        applyNodeTransform(node);
         node.style.visibility = el.visible ? "visible" : "hidden";
+        node.dataset.visible = String(el.visible);
       }
 
       node.style.width = el.width + "px";
       node.style.height = el.height + "px";
-      node.style.visibility = el.visible ? "visible" : "hidden";
+      const previousVisible = node.dataset.visible === "true";
+      if (previousVisible !== el.visible) {
+        node.dataset.visible = String(el.visible);
+        const surface = node.firstElementChild as HTMLElement | null;
+        surface?.getAnimations().forEach((animation) => animation.cancel());
+        if (el.visible) {
+          node.style.visibility = "visible";
+          surface?.animate(animationFrames(el.enterAnimation), { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" });
+        } else {
+          const frames = animationFrames(el.exitAnimation).reverse();
+          const animation = surface?.animate(frames, { duration: 260, easing: "ease-in" });
+          if (animation) {
+            animation.finished.then(() => {
+              if (node?.dataset.visible === "false") node.style.visibility = "hidden";
+            }).catch(() => {});
+          } else node.style.visibility = "hidden";
+        }
+      } else if (!el.visible) {
+        node.style.visibility = "hidden";
+      }
+      node.style.opacity = String(el.opacity ?? 1);
       node.style.zIndex = String(el.zIndex);
+      setScale(node, sx, sy);
+      applyNodeTransform(node);
 
       // Sync volume whenever element state changes
       if (el.type === "video") {
@@ -3059,14 +3082,16 @@ export const OverlayStage = forwardRef<
             animating.delete(id);
             return;
           }
-          const curSx = el.scaleX ?? 1,
-            curSy = el.scaleY ?? 1;
+          const curSx = latestElement?.scaleX ?? 1,
+            curSy = latestElement?.scaleY ?? 1;
           pos.x += (target.x - pos.x) * FACTOR;
           pos.y += (target.y - pos.y) * FACTOR;
           pos.rotation = lerpAngle(pos.rotation, target.rotation, FACTOR);
           n.style.left = pos.x + "px";
           n.style.top = pos.y + "px";
-          n.style.transform = `rotate(${pos.rotation}deg) scaleX(${curSx}) scaleY(${curSy})`;
+          setScale(n, curSx, curSy);
+          setRotation(n, pos.rotation);
+          applyNodeTransform(n);
           const close =
             Math.abs(target.x - pos.x) < 0.3 &&
             Math.abs(target.y - pos.y) < 0.3 &&
@@ -3077,7 +3102,9 @@ export const OverlayStage = forwardRef<
             pos.rotation = target.rotation;
             n.style.left = target.x + "px";
             n.style.top = target.y + "px";
-            n.style.transform = `rotate(${target.rotation}deg) scaleX(${curSx}) scaleY(${curSy})`;
+            setScale(n, curSx, curSy);
+            setRotation(n, target.rotation);
+            applyNodeTransform(n);
             animating.delete(id);
             return;
           }

@@ -8,6 +8,7 @@ import { authHeaders } from "../hooks/useAuth";
 import type { DrawToolMode } from "./DrawingCanvas";
 import { useToast } from "./ToastProvider";
 import {
+  Disc,
   Pencil,
   X,
   Eraser,
@@ -18,7 +19,15 @@ import {
   Type,
   Palette,
   SlidersHorizontal,
+  Maximize2,
+  Expand,
+  FlipHorizontal2,
+  FlipVertical2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
+import { STREAM_H, STREAM_OFFSET_X, STREAM_OFFSET_Y, STREAM_W } from "../canvas/config";
+import { createDvdMotion, getDvdPosition } from "../canvas/dvdMotion";
 
 const PRESET_COLORS = [
   "#ffffff",
@@ -45,6 +54,12 @@ interface ToolbarProps {
   onDrawClear: () => void;
   onSaveDrawingAsElement: () => void;
   hasStrokes: boolean;
+  selectedElement?: CanvasElement;
+  onElementChange: (id: string, changes: Partial<CanvasElement>) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const ACCEPTED =
@@ -110,11 +125,53 @@ export function Toolbar({
   onDrawClear,
   onSaveDrawingAsElement,
   hasStrokes,
+  selectedElement,
+  onElementChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: ToolbarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [showTextDialog, setShowTextDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
   const toast = useToast();
+
+  const fitSelected = (mode: "fit" | "fill") => {
+    if (!selectedElement || selectedElement.width <= 0 || selectedElement.height <= 0) return;
+    const factor = mode === "fit"
+      ? Math.min(STREAM_W / selectedElement.width, STREAM_H / selectedElement.height)
+      : Math.max(STREAM_W / selectedElement.width, STREAM_H / selectedElement.height);
+    const width = selectedElement.width * factor;
+    const height = selectedElement.height * factor;
+    onElementChange(selectedElement.id, {
+      x: STREAM_OFFSET_X + (STREAM_W - width) / 2,
+      y: STREAM_OFFSET_Y + (STREAM_H - height) / 2,
+      width,
+      height,
+      rotation: 0,
+      scaleX: selectedElement.scaleX && selectedElement.scaleX < 0 ? -1 : 1,
+      scaleY: selectedElement.scaleY && selectedElement.scaleY < 0 ? -1 : 1,
+      dvdEnabled: false,
+    });
+  };
+
+  const toggleDvd = () => {
+    if (!selectedElement || selectedElement.type === "audio") return;
+    if (selectedElement.dvdEnabled) {
+      const position = getDvdPosition(selectedElement);
+      onElementChange(selectedElement.id, { dvdEnabled: false, x: position.x, y: position.y });
+      return;
+    }
+    onElementChange(selectedElement.id, createDvdMotion(selectedElement));
+  };
+
+  const flipSelected = (axis: "x" | "y") => {
+    if (!selectedElement || !["image", "gif", "video"].includes(selectedElement.type)) return;
+    onElementChange(selectedElement.id, axis === "x"
+      ? { scaleX: -(selectedElement.scaleX ?? 1) }
+      : { scaleY: -(selectedElement.scaleY ?? 1) });
+  };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -265,6 +322,12 @@ export function Toolbar({
           onChange={handleFile}
         />
 
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <button className="ui-icon-button" onClick={onUndo} disabled={!canUndo} title="Undo the latest canvas change (Ctrl+Z)" style={{ background: "#202020", border: "1px solid #3a3a3a", color: canUndo ? "#d6d9df" : "#555", cursor: canUndo ? "pointer" : "not-allowed" }}><Undo2 size={ICON_SIZE}/></button>
+          <button className="ui-icon-button" onClick={onRedo} disabled={!canRedo} title="Redo the latest undone canvas change (Ctrl+Y)" style={{ background: "#202020", border: "1px solid #3a3a3a", color: canRedo ? "#d6d9df" : "#555", cursor: canRedo ? "pointer" : "not-allowed" }}><Redo2 size={ICON_SIZE}/></button>
+        </div>
+        <div style={{ width: 1, height: 24, background: "#2a2a2a", margin: "0 2px" }} />
+
         {!drawMode && (
           <>
             <button
@@ -327,6 +390,25 @@ export function Toolbar({
           onDrawModeToggle,
           drawMode,
           "Toggle drawing mode",
+        )}
+
+        {!drawMode && selectedElement && !selectedElement.locked && (
+          <>
+            <div style={{ width: 1, height: 24, background: "#2a2a2a", margin: "0 2px" }} />
+            <span style={{ color: "#7f8997", fontSize: 10, fontWeight: 700 }}>SELECTED</span>
+            {btn(<><Maximize2 size={ICON_SIZE}/> Fit</>, () => fitSelected("fit"), false, "Fit selected element inside the Twitch viewport")}
+            {btn(<><Expand size={ICON_SIZE}/> Fill</>, () => fitSelected("fill"), false, "Fill the Twitch viewport with the selected element")}
+            {selectedElement.type !== "audio" && btn(<><Disc size={ICON_SIZE}/> DVD</>, toggleDvd, Boolean(selectedElement.dvdEnabled), selectedElement.dvdEnabled ? "Stop DVD movement" : "Start DVD movement")}
+            {["image", "gif", "video"].includes(selectedElement.type) && (
+              <>
+                {btn(<><FlipHorizontal2 size={ICON_SIZE}/> Flip X</>, () => flipSelected("x"), (selectedElement.scaleX ?? 1) < 0, "Mirror selected media left to right")}
+                {btn(<><FlipVertical2 size={ICON_SIZE}/> Flip Y</>, () => flipSelected("y"), (selectedElement.scaleY ?? 1) < 0, "Mirror selected media top to bottom")}
+              </>
+            )}
+            {selectedElement.type === "video" && (
+              btn(<>Auto</>, () => onElementChange(selectedElement.id, { autoVisibility: !selectedElement.autoVisibility }), Boolean(selectedElement.autoVisibility), selectedElement.autoVisibility ? "Disable automatic show on play and hide on end" : "Automatically show on play and hide when the video ends")
+            )}
+          </>
         )}
 
         {drawMode && (
