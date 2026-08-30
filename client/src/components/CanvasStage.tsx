@@ -2682,6 +2682,7 @@ export const OverlayStage = forwardRef<
     Map<string, { x: number; y: number; rotation: number }>
   >(new Map());
   const animatingRef = useRef<Set<string>>(new Set());
+  const flyingRef = useRef<Set<string>>(new Set());
   // Stores the actual HTMLMediaElement for each element id (video or hidden audio)
   const mediaElMapRef = useRef<Map<string, HTMLMediaElement>>(new Map());
   // Container for hidden audio elements
@@ -2730,13 +2731,36 @@ export const OverlayStage = forwardRef<
 
   useEffect(() => {
     let frame = 0;
-    const animateDvdElements = () => {
+    const animateMovingElements = () => {
       const now = Date.now();
       for (const element of overlayElementsRef.current) {
-        if (!element.dvdEnabled || !element.visible || element.type === "audio")
+        if (!element.visible || element.type === "audio")
           continue;
         const node = nodeMapRef.current.get(element.id);
         if (!node) continue;
+        if (
+          element.flyStartedAt &&
+          element.flyDurationMs &&
+          element.flyFromX !== undefined &&
+          element.flyFromY !== undefined &&
+          element.flyToX !== undefined &&
+          element.flyToY !== undefined
+        ) {
+          const progress = Math.max(
+            0,
+            Math.min(1, (now - element.flyStartedAt) / element.flyDurationMs),
+          );
+          const x = element.flyFromX + (element.flyToX - element.flyFromX) * progress - STREAM_OFFSET_X;
+          const y = element.flyFromY + (element.flyToY - element.flyFromY) * progress - STREAM_OFFSET_Y;
+          node.style.left = `${x}px`;
+          node.style.top = `${y}px`;
+          const current = posMapRef.current.get(element.id);
+          if (current) Object.assign(current, { x, y, rotation: 0 });
+          targetMapRef.current.set(element.id, { x, y, rotation: 0 });
+          flyingRef.current.add(element.id);
+          continue;
+        }
+        if (!element.dvdEnabled) continue;
         const position = getDvdPosition(element, now);
         const x = position.x - STREAM_OFFSET_X;
         const y = position.y - STREAM_OFFSET_Y;
@@ -2806,9 +2830,9 @@ export const OverlayStage = forwardRef<
       for (const id of dvdBounceStateRef.current.keys()) {
         if (!activeIds.has(id)) dvdBounceStateRef.current.delete(id);
       }
-      frame = requestAnimationFrame(animateDvdElements);
+      frame = requestAnimationFrame(animateMovingElements);
     };
-    frame = requestAnimationFrame(animateDvdElements);
+    frame = requestAnimationFrame(animateMovingElements);
     return () => cancelAnimationFrame(frame);
   }, []);
 
@@ -3139,6 +3163,31 @@ export const OverlayStage = forwardRef<
         rotation: el.rotation ?? 0,
       });
 
+      const hasActiveFlight = Boolean(
+        el.flyStartedAt &&
+          el.flyDurationMs &&
+          el.flyFromX !== undefined &&
+          el.flyFromY !== undefined &&
+          el.flyToX !== undefined &&
+          el.flyToY !== undefined,
+      );
+      if (hasActiveFlight) {
+        flyingRef.current.add(el.id);
+        animating.delete(el.id);
+        continue;
+      }
+      if (flyingRef.current.delete(el.id)) {
+        const restored = targetMap.get(el.id)!;
+        const current = posMap.get(el.id);
+        if (current) Object.assign(current, restored);
+        node.style.left = `${restored.x}px`;
+        node.style.top = `${restored.y}px`;
+        setRotation(node, restored.rotation);
+        applyNodeTransform(node);
+        animating.delete(el.id);
+        continue;
+      }
+
       // DVD motion already supplies a continuous position every animation
       // frame. Applying the remote-drag lerp as well makes the rendered node
       // lag behind the mathematical path and visually reverse before reaching
@@ -3167,7 +3216,7 @@ export const OverlayStage = forwardRef<
           const latestElement = overlayElementsRef.current.find(
             (candidate) => candidate.id === id,
           );
-          if (latestElement?.dvdEnabled) {
+          if (latestElement?.dvdEnabled || latestElement?.flyStartedAt) {
             animating.delete(id);
             return;
           }
