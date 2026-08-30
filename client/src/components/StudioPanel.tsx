@@ -18,9 +18,11 @@ import type {
   OverlayTrigger,
   StudioState,
   TriggerPlacement,
+  FlyDirection,
   ChatPermission,
 } from "../types";
 import { randomUUID } from "../utils";
+import { getFileLabel } from "../canvas/config";
 import { authHeaders } from "../hooks/useAuth";
 import { useToast } from "./ToastProvider";
 
@@ -83,6 +85,7 @@ const triggerActionOptions: Array<{
 }> = [
   { value: "show-element", label: "Show element" },
   { value: "show-temporary", label: "Show image temporarily" },
+  { value: "fly-across", label: "Fly across stream" },
   { value: "hide-element", label: "Hide element" },
   { value: "toggle-element", label: "Toggle element visibility" },
   { value: "play-media", label: "Play video, then hide" },
@@ -116,6 +119,8 @@ export function StudioPanel(props: StudioPanelProps) {
   const [cooldown, setCooldown] = useState(5);
   const [triggerPlacement, setTriggerPlacement] =
     useState<TriggerPlacement>("current");
+  const [flyDirection, setFlyDirection] =
+    useState<FlyDirection>("left-to-right-bottom");
   const [duration, setDuration] = useState(5);
   const [permission, setPermission] = useState<ChatPermission>("everyone");
   const [editingTriggerId, setEditingTriggerId] = useState<string | null>(null);
@@ -194,7 +199,11 @@ export function StudioPanel(props: StudioPanelProps) {
         ? triggerPlacement
         : undefined,
       durationSeconds:
-        triggerAction === "show-temporary" ? duration : undefined,
+        ["show-temporary", "fly-across"].includes(triggerAction)
+          ? duration
+          : undefined,
+      flyDirection:
+        triggerAction === "fly-across" ? flyDirection : undefined,
       permission,
     });
     toast.success(
@@ -212,6 +221,7 @@ export function StudioPanel(props: StudioPanelProps) {
     setTargetId(trigger.targetId ?? "");
     setCooldown(trigger.cooldownSeconds);
     setTriggerPlacement(trigger.placement ?? "current");
+    setFlyDirection(trigger.flyDirection ?? "left-to-right-bottom");
     setDuration(trigger.durationSeconds ?? 5);
     setPermission(trigger.permission ?? "everyone");
   };
@@ -479,16 +489,18 @@ export function StudioPanel(props: StudioPanelProps) {
                     ? props.elements.filter(
                         (element) => element.type === "video",
                       )
-                    : triggerAction === "show-temporary"
+                    : ["show-temporary", "fly-across"].includes(triggerAction)
                       ? props.elements.filter((element) =>
-                          ["image", "gif"].includes(element.type),
+                          ["image", "gif", "video"].includes(element.type),
                         )
                       : props.elements
                 ).map((item) => (
                   <option key={item.id} value={item.id}>
                     {"name" in item
                       ? item.name
-                      : `${item.type} · ${item.id.slice(0, 6)}`}
+                      : item.type === "text"
+                        ? `Text · ${item.id.slice(0, 6)}`
+                        : `${getFileLabel(item.src) || item.type} · ${item.type}`}
                   </option>
                 ))}
               </select>
@@ -513,6 +525,7 @@ export function StudioPanel(props: StudioPanelProps) {
                   }
                 >
                   <option value="current">Keep position</option>
+                  <option value="random">Random position</option>
                   <option value="fit">Fit inside stream</option>
                   <option value="fill">Fill stream</option>
                   <option value="top-left">Top left</option>
@@ -527,7 +540,41 @@ export function StudioPanel(props: StudioPanelProps) {
                 </select>
               </label>
             )}
-            {triggerAction === "show-temporary" && (
+            {triggerAction === "fly-across" && (
+              <label
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 150px",
+                  alignItems: "center",
+                  gap: 8,
+                  color: "#aab2bf",
+                  fontSize: 11,
+                }}
+              >
+                Flight path
+                <select
+                  style={fieldStyle}
+                  value={flyDirection}
+                  onChange={(event) =>
+                    setFlyDirection(event.target.value as FlyDirection)
+                  }
+                >
+                  <option value="left-to-right-top">Left → right · top</option>
+                  <option value="left-to-right-center">Left → right · center</option>
+                  <option value="left-to-right-bottom">Left → right · bottom</option>
+                  <option value="right-to-left-top">Right → left · top</option>
+                  <option value="right-to-left-center">Right → left · center</option>
+                  <option value="right-to-left-bottom">Right → left · bottom</option>
+                  <option value="top-to-bottom-left">Top → bottom · left</option>
+                  <option value="top-to-bottom-center">Top → bottom · center</option>
+                  <option value="top-to-bottom-right">Top → bottom · right</option>
+                  <option value="bottom-to-top-left">Bottom → top · left</option>
+                  <option value="bottom-to-top-center">Bottom → top · center</option>
+                  <option value="bottom-to-top-right">Bottom → top · right</option>
+                </select>
+              </label>
+            )}
+            {["show-temporary", "fly-across"].includes(triggerAction) && (
               <label
                 style={{
                   display: "grid",
@@ -538,7 +585,9 @@ export function StudioPanel(props: StudioPanelProps) {
                   fontSize: 11,
                 }}
               >
-                Visible duration (seconds)
+                {triggerAction === "fly-across"
+                  ? "Flight duration (seconds)"
+                  : "Visible duration (seconds)"}
                 <input
                   style={fieldStyle}
                   type="number"

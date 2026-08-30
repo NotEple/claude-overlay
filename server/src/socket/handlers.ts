@@ -252,16 +252,17 @@ export function registerSocketHandlers(
 function validLabel(value: unknown, max: number): value is string { return typeof value === "string" && value.trim().length > 0 && value.length <= max; }
 function validUrl(value: unknown): value is string { if (typeof value !== "string" || value.length > 2048) return false; try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol); } catch { return false; } }
 function validTrigger(value: any): boolean {
-  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "permission"]);
+  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "flyDirection", "permission"]);
   return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
     && validLabel(value.id, 100) && validLabel(value.name, 60)
     && ["chat-command", "follow", "subscribe", "gift-subscribe", "raid", "bits", "channel-points"].includes(value.event)
-    && ["show-element", "show-temporary", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay"].includes(value.action)
+    && ["show-element", "show-temporary", "fly-across", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay"].includes(value.action)
     && typeof value.enabled === "boolean" && Number.isFinite(value.cooldownSeconds) && value.cooldownSeconds >= 0 && value.cooldownSeconds <= 86400
     && (value.match === undefined || (typeof value.match === "string" && value.match.length <= 100))
     && (value.minimum === undefined || (Number.isFinite(value.minimum) && value.minimum >= 0 && value.minimum <= 10_000_000))
-    && (value.placement === undefined || ["current", "fit", "fill", "top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"].includes(value.placement))
+    && (value.placement === undefined || ["current", "random", "fit", "fill", "top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"].includes(value.placement))
     && (value.durationSeconds === undefined || (Number.isFinite(value.durationSeconds) && value.durationSeconds >= 1 && value.durationSeconds <= 3600))
+    && (value.flyDirection === undefined || ["left-to-right-top", "left-to-right-center", "left-to-right-bottom", "right-to-left-top", "right-to-left-center", "right-to-left-bottom", "top-to-bottom-left", "top-to-bottom-center", "top-to-bottom-right", "bottom-to-top-left", "bottom-to-top-center", "bottom-to-top-right"].includes(value.flyDirection))
     && (value.permission === undefined || ["everyone", "vip", "moderator", "streamer"].includes(value.permission))
     && (value.action === "refresh-overlay" ? value.targetId === undefined : validLabel(value.targetId, 100));
 }

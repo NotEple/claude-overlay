@@ -1675,20 +1675,35 @@ export function CanvasStage({
 
   useEffect(() => {
     let frame = 0;
-    const animateDvdElements = () => {
+    const animateMovingElements = () => {
       const now = Date.now();
       for (const element of elementsRef.current) {
-        if (!element.dvdEnabled || draggingRef.current.has(element.id))
-          continue;
+        if (draggingRef.current.has(element.id)) continue;
         const node = nodeMapRef.current.get(element.id);
         if (!node) continue;
-        const position = getDvdPosition(element, now);
-        node.style.left = `${position.x}px`;
-        node.style.top = `${position.y}px`;
+        if (
+          element.flyStartedAt &&
+          element.flyDurationMs &&
+          element.flyFromX !== undefined &&
+          element.flyFromY !== undefined &&
+          element.flyToX !== undefined &&
+          element.flyToY !== undefined
+        ) {
+          const progress = Math.max(
+            0,
+            Math.min(1, (now - element.flyStartedAt) / element.flyDurationMs),
+          );
+          node.style.left = `${element.flyFromX + (element.flyToX - element.flyFromX) * progress}px`;
+          node.style.top = `${element.flyFromY + (element.flyToY - element.flyFromY) * progress}px`;
+        } else if (element.dvdEnabled) {
+          const position = getDvdPosition(element, now);
+          node.style.left = `${position.x}px`;
+          node.style.top = `${position.y}px`;
+        }
       }
-      frame = requestAnimationFrame(animateDvdElements);
+      frame = requestAnimationFrame(animateMovingElements);
     };
-    frame = requestAnimationFrame(animateDvdElements);
+    frame = requestAnimationFrame(animateMovingElements);
     return () => cancelAnimationFrame(frame);
   }, []);
 

@@ -7,6 +7,7 @@ const UPDATE_KEYS = new Set<keyof CanvasElement>([
   "autoVisibility",
   "dvdEnabled", "dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY",
   "locked", "opacity", "enterAnimation", "exitAnimation",
+  "flyStartedAt", "flyDurationMs", "flyFromX", "flyFromY", "flyToX", "flyToY",
 ]);
 const ANIMATIONS = new Set(["none", "fade", "pop", "slide-left", "slide-right", "slide-up", "slide-down", "spin"]);
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
@@ -27,7 +28,8 @@ export function validElement(element: CanvasElement): boolean {
     && (element.opacity === undefined || (finite(element.opacity) && element.opacity >= 0 && element.opacity <= 1))
     && (element.enterAnimation === undefined || ANIMATIONS.has(element.enterAnimation))
     && (element.exitAnimation === undefined || ANIMATIONS.has(element.exitAnimation))
-    && [element.dvdStartedAt, element.dvdStartX, element.dvdStartY, element.dvdVelocityX, element.dvdVelocityY]
+    && [element.dvdStartedAt, element.dvdStartX, element.dvdStartY, element.dvdVelocityX, element.dvdVelocityY,
+      element.flyStartedAt, element.flyDurationMs, element.flyFromX, element.flyFromY, element.flyToX, element.flyToY]
       .every((value) => value === undefined || finite(value));
 }
 
@@ -51,7 +53,7 @@ export function validElementUpdate(changes: Partial<CanvasElement>): boolean {
   if ("opacity" in candidate && (!finite(candidate.opacity) || (candidate.opacity as number) < 0 || (candidate.opacity as number) > 1)) return false;
   if ("enterAnimation" in candidate && !ANIMATIONS.has(candidate.enterAnimation as string)) return false;
   if ("exitAnimation" in candidate && !ANIMATIONS.has(candidate.exitAnimation as string)) return false;
-  for (const key of ["dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY"] as const) {
+  for (const key of ["dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY", "flyStartedAt", "flyDurationMs", "flyFromX", "flyFromY", "flyToX", "flyToY"] as const) {
     if (key in candidate && !finite(candidate[key])) return false;
   }
   if ("mediaVolume" in candidate && (!finite(candidate.mediaVolume) || (candidate.mediaVolume as number) < 0 || (candidate.mediaVolume as number) > 1)) return false;

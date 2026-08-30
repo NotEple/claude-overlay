@@ -28,6 +28,12 @@ export interface CanvasElement {
   opacity?: number;
   enterAnimation?: ElementAnimation;
   exitAnimation?: ElementAnimation;
+  flyStartedAt?: number;
+  flyDurationMs?: number;
+  flyFromX?: number;
+  flyFromY?: number;
+  flyToX?: number;
+  flyToY?: number;
 }
 
 export type ElementAnimation = 'none' | 'fade' | 'pop' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'spin';
@@ -35,10 +41,11 @@ export interface SavedScene { id: string; name: string; elements: CanvasElement[
 export interface ElementPreset { id: string; name: string; elements: CanvasElement[]; createdAt: string; }
 export interface SoundboardItem { id: string; name: string; url: string; volume: number; }
 export type TriggerEventType = 'chat-command' | 'follow' | 'subscribe' | 'gift-subscribe' | 'raid' | 'bits' | 'channel-points';
-export type TriggerActionType = 'show-element' | 'show-temporary' | 'hide-element' | 'toggle-element' | 'play-media' | 'play-sound' | 'enable-dvd' | 'refresh-overlay';
-export type TriggerPlacement = 'current' | 'fit' | 'fill' | 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+export type TriggerActionType = 'show-element' | 'show-temporary' | 'fly-across' | 'hide-element' | 'toggle-element' | 'play-media' | 'play-sound' | 'enable-dvd' | 'refresh-overlay';
+export type TriggerPlacement = 'current' | 'random' | 'fit' | 'fill' | 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+export type FlyDirection = 'left-to-right-top' | 'left-to-right-center' | 'left-to-right-bottom' | 'right-to-left-top' | 'right-to-left-center' | 'right-to-left-bottom' | 'top-to-bottom-left' | 'top-to-bottom-center' | 'top-to-bottom-right' | 'bottom-to-top-left' | 'bottom-to-top-center' | 'bottom-to-top-right';
 export type ChatPermission = 'everyone' | 'vip' | 'moderator' | 'streamer';
-export interface OverlayTrigger { id: string; name: string; enabled: boolean; event: TriggerEventType; match?: string; minimum?: number; action: TriggerActionType; targetId?: string; cooldownSeconds: number; placement?: TriggerPlacement; durationSeconds?: number; permission?: ChatPermission; }
+export interface OverlayTrigger { id: string; name: string; enabled: boolean; event: TriggerEventType; match?: string; minimum?: number; action: TriggerActionType; targetId?: string; cooldownSeconds: number; placement?: TriggerPlacement; durationSeconds?: number; flyDirection?: FlyDirection; permission?: ChatPermission; }
 export interface ActivityItem { id: string; at: string; user: string; action: string; }
 export interface StudioState { scenes: SavedScene[]; presets: ElementPreset[]; sounds: SoundboardItem[]; triggers: OverlayTrigger[]; activity: ActivityItem[]; twitchConnected: boolean; }
 

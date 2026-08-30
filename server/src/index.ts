@@ -11,6 +11,7 @@ import { setUploadedMediaHeaders, uploadRouter, UPLOAD_DIR } from "./uploads/rou
 import type {
   CanvasElement,
   ChatPermission,
+  FlyDirection,
   TriggerPlacement,
   ServerToClientEvents,
   ClientToServerEvents,
@@ -63,7 +64,11 @@ function restorePresentation(id: string) {
   io.emit("element:updated", { id, changes: pending.changes });
 }
 
-function presentElement(element: CanvasElement, placement: TriggerPlacement = "current") {
+function presentElement(
+  element: CanvasElement,
+  placement: TriggerPlacement = "current",
+  emitUpdate = true,
+) {
   let pending = presentationRestores.get(element.id);
   if (!pending) {
     pending = {
@@ -76,6 +81,8 @@ function presentElement(element: CanvasElement, placement: TriggerPlacement = "c
         rotation: element.rotation,
         dvdEnabled: element.dvdEnabled ?? false,
         autoVisibility: element.autoVisibility ?? false,
+        flyStartedAt: 0,
+        flyDurationMs: 0,
       },
     };
     presentationRestores.set(element.id, pending);
@@ -85,6 +92,14 @@ function presentElement(element: CanvasElement, placement: TriggerPlacement = "c
   }
 
   const changes: Partial<CanvasElement> = { visible: true, dvdEnabled: false };
+  if (placement === "random") {
+    const positions: TriggerPlacement[] = [
+      "top-left", "top-center", "top-right",
+      "center-left", "center", "center-right",
+      "bottom-left", "bottom-center", "bottom-right",
+    ];
+    placement = positions[Math.floor(Math.random() * positions.length)];
+  }
   if (placement === "fit" || placement === "fill") {
     const originalWidth = pending.changes.width ?? element.width;
     const originalHeight = pending.changes.height ?? element.height;
@@ -99,9 +114,10 @@ function presentElement(element: CanvasElement, placement: TriggerPlacement = "c
   } else if (placement !== "current") {
     const width = pending.changes.width ?? element.width;
     const height = pending.changes.height ?? element.height;
-    const margin = 40;
     const horizontal = placement.endsWith("left") ? "left" : placement.endsWith("right") ? "right" : "center";
     const vertical = placement.startsWith("top") ? "top" : placement.startsWith("bottom") ? "bottom" : "center";
+    const isCorner = horizontal !== "center" && vertical !== "center";
+    const margin = isCorner ? 0 : 40;
     changes.x = horizontal === "left"
       ? STREAM_OFFSET_X + margin
       : horizontal === "right"
@@ -115,8 +131,68 @@ function presentElement(element: CanvasElement, placement: TriggerPlacement = "c
     changes.rotation = 0;
   }
   Object.assign(element, changes);
-  io.emit("element:updated", { id: element.id, changes });
+  if (emitUpdate) io.emit("element:updated", { id: element.id, changes });
   return pending;
+}
+
+function flyElement(
+  element: CanvasElement,
+  direction: FlyDirection = "left-to-right-bottom",
+  durationSeconds = 5,
+) {
+  const pending = presentElement(element, "current", false);
+  const width = pending?.changes.width ?? element.width;
+  const height = pending?.changes.height ?? element.height;
+  const [movement, lane] = direction.split(/-(?=top$|center$|bottom$|left$|right$)/) as [string, string];
+  const horizontal = movement === "left-to-right" || movement === "right-to-left";
+  const laneX = lane === "left"
+    ? STREAM_OFFSET_X
+    : lane === "right"
+      ? STREAM_OFFSET_X + STREAM_W - width
+      : STREAM_OFFSET_X + (STREAM_W - width) / 2;
+  const laneY = lane === "top"
+    ? STREAM_OFFSET_Y
+    : lane === "bottom"
+      ? STREAM_OFFSET_Y + STREAM_H - height
+      : STREAM_OFFSET_Y + (STREAM_H - height) / 2;
+  let fromX = laneX;
+  let toX = laneX;
+  let fromY = laneY;
+  let toY = laneY;
+  if (horizontal) {
+    fromX = movement === "left-to-right" ? STREAM_OFFSET_X - width : STREAM_OFFSET_X + STREAM_W;
+    toX = movement === "left-to-right" ? STREAM_OFFSET_X + STREAM_W : STREAM_OFFSET_X - width;
+  } else {
+    fromY = movement === "top-to-bottom" ? STREAM_OFFSET_Y - height : STREAM_OFFSET_Y + STREAM_H;
+    toY = movement === "top-to-bottom" ? STREAM_OFFSET_Y + STREAM_H : STREAM_OFFSET_Y - height;
+  }
+  const durationMs = Math.max(1, durationSeconds) * 1000;
+  const changes: Partial<CanvasElement> = {
+    visible: true,
+    dvdEnabled: false,
+    rotation: 0,
+    x: fromX,
+    y: fromY,
+    flyStartedAt: Date.now(),
+    flyDurationMs: durationMs,
+    flyFromX: fromX,
+    flyFromY: fromY,
+    flyToX: toX,
+    flyToY: toY,
+  };
+  Object.assign(element, changes);
+  io.emit("element:updated", { id: element.id, changes });
+  if (element.type === "video") {
+    io.emit("media:control", { id: element.id, action: "play", currentTime: 0 });
+  }
+  if (pending) {
+    pending.timer = setTimeout(() => {
+      if (element.type === "video") {
+        io.emit("media:control", { id: element.id, action: "pause", currentTime: 0 });
+      }
+      restorePresentation(element.id);
+    }, durationMs);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +267,11 @@ configureTwitchEvents((eventType, event) => {
       element.autoVisibility = true;
       io.emit('element:updated', { id: element.id, changes: { autoVisibility: true } });
       io.emit('media:control', { id: element.id, action: 'play', currentTime: 0 });
+      continue;
+    }
+    if (trigger.action === 'fly-across') {
+      if (!['image', 'gif', 'video'].includes(element.type)) continue;
+      flyElement(element, trigger.flyDirection, trigger.durationSeconds ?? 5);
       continue;
     }
     if (trigger.action === 'show-temporary') {
