@@ -74,6 +74,29 @@ export interface DvdCelebrationSettings {
   soundUrl: string | null;
   counterPosition: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
 }
+export interface ChatEmoteSettings {
+  enabled: boolean;
+  showNames: boolean;
+  nameBackgroundEnabled: boolean;
+  nameBackgroundColor: string;
+  nameFontSize: number;
+  motion: "walls" | "floor";
+  gravity: number;
+  size: number;
+  speed: number;
+  lifetimeSeconds: number;
+  maxVisible: number;
+  blacklist: string[];
+}
+export interface ChatEmoteSpawn {
+  id: string;
+  emoteId: string;
+  name: string;
+  imageUrl: string;
+  sender: string;
+  senderLogin?: string;
+  senderColor?: string;
+}
 export interface ElementAddedPayload { element: CanvasElement; }
 export interface ElementUpdatedPayload { id: string; changes: Partial<CanvasElement>; }
 export interface ElementRemovedPayload { id: string; }
@@ -138,6 +161,8 @@ export interface ServerToClientEvents {
   'draw:sync': (strokes: DrawStroke[]) => void;
   'draw:live': (stroke: LiveDrawStroke) => void;
   'dvd:settings': (settings: DvdCelebrationSettings) => void;
+  'chat-emote:settings': (settings: ChatEmoteSettings) => void;
+  'chat-emote:spawn': (spawn: ChatEmoteSpawn) => void;
   'studio:sync': (state: StudioState) => void;
   'history:status': (status: { canUndo: boolean; canRedo: boolean }) => void;
   'sound:play': (item: SoundboardItem & { playbackId?: string }) => void;
@@ -157,6 +182,7 @@ export interface ClientToServerEvents {
   'draw:clear': () => void;
   'draw:live': (stroke: Omit<LiveDrawStroke, 'userId'>) => void;
   'dvd:settings': (settings: DvdCelebrationSettings) => void;
+  'chat-emote:settings': (settings: ChatEmoteSettings) => void;
   'history:undo': () => void;
   'history:redo': () => void;
   'scene:save': (payload: { id: string; name: string }) => void;

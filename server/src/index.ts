@@ -18,6 +18,7 @@ import type {
   ClientToServerEvents,
 } from "./types.js";
 import { configureTwitchEvents } from "./twitch/eventsub.js";
+import { resolveSevenTvEmotes } from "./seventv/emotes.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -55,6 +56,7 @@ interface PresentationRestore {
 const presentationRestores = new Map<string, PresentationRestore>();
 const mediaCompletionWaiters = new Map<string, Set<() => void>>();
 const soundCompletionWaiters = new Map<string, () => void>();
+const chatEmoteSenderCooldowns = new Map<string, number>();
 
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
@@ -331,6 +333,53 @@ io.on("connection", (socket) =>
 
 const triggerCooldowns = new Map<string, number>();
 configureTwitchEvents((eventType, event) => {
+  const emoteSender = (event.chatter_user_login ?? "").toLowerCase();
+  const emoteSenderBlocked = canvasStore.chatEmoteSettings.blacklist.includes(emoteSender);
+  const emoteSenderKey = emoteSender || event.chatter_user_id || "unknown";
+  const canSpawnChatEmote = () => {
+    const blockedUntil = chatEmoteSenderCooldowns.get(emoteSenderKey) ?? 0;
+    if (blockedUntil > Date.now()) return false;
+    chatEmoteSenderCooldowns.delete(emoteSenderKey);
+    return true;
+  };
+  const markChatEmoteSpawned = () => {
+    const lifetimeMs = canvasStore.chatEmoteSettings.lifetimeSeconds * 1000;
+    const blockedUntil = Date.now() + lifetimeMs;
+    chatEmoteSenderCooldowns.set(emoteSenderKey, blockedUntil);
+    setTimeout(() => {
+      if (chatEmoteSenderCooldowns.get(emoteSenderKey) === blockedUntil)
+        chatEmoteSenderCooldowns.delete(emoteSenderKey);
+    }, lifetimeMs);
+  };
+  if (eventType === "chat-command" && canvasStore.chatEmoteSettings.enabled && !emoteSenderBlocked && canSpawnChatEmote()) {
+    const nativeEmote = event.native_emotes?.[0];
+    if (nativeEmote) {
+      markChatEmoteSpawned();
+      io.to("overlay").emit("chat-emote:spawn", {
+        id: randomUUID(),
+        emoteId: nativeEmote.id,
+        name: nativeEmote.name,
+        imageUrl: nativeEmote.imageUrl,
+        sender: event.chatter_user_name || event.chatter_user_login || "Viewer",
+        senderLogin: emoteSender,
+        senderColor: event.chatter_color,
+      });
+    } else if (event.room_id) void resolveSevenTvEmotes(event.room_id, event.message.text).then((emotes) => {
+      const emote = emotes[0];
+      if (emote && canSpawnChatEmote()) {
+        markChatEmoteSpawned();
+        io.to("overlay").emit("chat-emote:spawn", {
+          id: randomUUID(),
+          emoteId: emote.id,
+          name: emote.name,
+          imageUrl: emote.imageUrl,
+          sender: event.chatter_user_name || event.chatter_user_login || "Viewer",
+          senderLogin: emoteSender,
+          senderColor: event.chatter_color,
+        });
+      }
+    });
+  }
   const now = Date.now();
   for (const trigger of canvasStore.triggers) {
     if (!trigger.enabled || trigger.event !== eventType) continue;

@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import {
   AudioLines,
-  Clapperboard,
   Headphones,
+  MessageCircle,
   Play,
   Pencil,
   Plus,
@@ -21,15 +21,19 @@ import type {
   FlyDirection,
   ChatPermission,
   TriggerStep,
+  ChatEmoteSettings,
+  ChatEmoteSpawn,
 } from "../types";
 import { randomUUID } from "../utils";
 import { getFileLabel } from "../canvas/config";
 import { authHeaders } from "../hooks/useAuth";
 import { useToast } from "./ToastProvider";
+import { ChatEmoteLayer } from "./ChatEmoteLayer";
+import previewEmote from "../assets/vicksyW.png";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 
-type Tab = "scenes" | "presets" | "sounds" | "triggers" | "effects";
+type Tab = "scenes" | "presets" | "sounds" | "triggers" | "emotes" | "effects";
 
 interface StudioPanelProps {
   studio: StudioState;
@@ -59,13 +63,14 @@ interface StudioPanelProps {
   dvdSoundUploading: boolean;
   onDvdSettingsChange: (settings: DvdCelebrationSettings) => void;
   onDvdSoundUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  chatEmoteSettings: ChatEmoteSettings;
+  onChatEmoteSettingsChange: (settings: ChatEmoteSettings) => void;
 }
 
 const tabs: Array<[Tab, string, typeof Save]> = [
-  ["scenes", "Scenes", Clapperboard],
-  ["presets", "Presets", Save],
   ["sounds", "Sounds", AudioLines],
   ["triggers", "Commands", Radio],
+  ["emotes", "Emotes", MessageCircle],
   ["effects", "Effects", Sparkles],
 ];
 
@@ -117,7 +122,7 @@ const rowStyle = {
 
 export function StudioPanel(props: StudioPanelProps) {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>("scenes");
+  const [tab, setTab] = useState<Tab>("sounds");
   const [name, setName] = useState("");
   const [soundUrl, setSoundUrl] = useState("");
   const [triggerAction, setTriggerAction] =
@@ -137,6 +142,8 @@ export function StudioPanel(props: StudioPanelProps) {
   const [stepTiming, setStepTiming] = useState<NonNullable<TriggerStep["timing"]>>("immediate");
   const [stepDelay, setStepDelay] = useState(1);
   const [uploading, setUploading] = useState(false);
+  const [emotePreview, setEmotePreview] = useState<ChatEmoteSpawn | null>(null);
+  const [blacklistName, setBlacklistName] = useState("");
   const dvdPreviewAudio = useRef<HTMLAudioElement | null>(null);
   const pendingStepBeforeChainEdit = useRef<TriggerStep | null>(null);
 
@@ -1110,6 +1117,286 @@ export function StudioPanel(props: StudioPanelProps) {
                 </button>
               </div>
             </div>
+          </Section>
+        )}
+        {tab === "emotes" && (
+          <Section
+            title="Chat emotes"
+            description="Bounce 7TV and Twitch emotes around OBS without adding them to Layers or storing their images."
+          >
+            <button
+              type="button"
+              className="ui-button"
+              aria-pressed={props.chatEmoteSettings.enabled}
+              onClick={() => {
+                const enabled = !props.chatEmoteSettings.enabled;
+                props.onChatEmoteSettingsChange({
+                  ...props.chatEmoteSettings,
+                  enabled,
+                });
+                toast.success(`Chat emotes ${enabled ? "enabled" : "disabled"}`);
+              }}
+              title="Enable or disable automatic 7TV and Twitch emotes from the currently monitored chat"
+              style={{
+                width: "100%",
+                justifyContent: "space-between",
+                border: `1px solid ${props.chatEmoteSettings.enabled ? "#16a34a" : "#7f1d1d"}`,
+                background: props.chatEmoteSettings.enabled ? "#052e16" : "#2a1717",
+                color: props.chatEmoteSettings.enabled ? "#bbf7d0" : "#fecaca",
+              }}
+            >
+              <span>Chat emotes</span>
+              <span>{props.chatEmoteSettings.enabled ? "Enabled" : "Disabled"}</span>
+            </button>
+            <div className="chat-emote-preview">
+              <ChatEmoteLayer
+                preview
+                spawn={emotePreview}
+                settings={props.chatEmoteSettings}
+              />
+              <span>Dashboard-only preview</span>
+            </div>
+            <button
+              type="button"
+              className="ui-button ui-button--compact soundboard-action"
+              onClick={() => {
+                setEmotePreview({
+                  id: randomUUID(),
+                  emoteId: "preview",
+                  name: "Preview",
+                  imageUrl: previewEmote,
+                  sender: "Vicksy viewer",
+                  senderColor: "#fb923c",
+                });
+                toast.info("Playing a dashboard-only emote preview");
+              }}
+              title="Preview the bounce movement locally without showing anything on OBS"
+            >
+              <Play size={13} /> Preview bounce
+            </button>
+            <div className="chat-emote-card">
+              <strong className="chat-emote-card__title">Behavior</strong>
+              <label className="chat-emote-setting">
+              <span>Show sender names</span>
+              <input
+                type="checkbox"
+                checked={props.chatEmoteSettings.showNames}
+                onChange={(event) => {
+                  props.onChatEmoteSettingsChange({
+                    ...props.chatEmoteSettings,
+                    showNames: event.target.checked,
+                  });
+                  toast.success(
+                    `Sender names ${event.target.checked ? "shown" : "hidden"}`,
+                  );
+                }}
+                title="Display the Twitch sender's name beneath each emote"
+              />
+              </label>
+              {props.chatEmoteSettings.showNames && (
+                <label className="chat-emote-setting">
+                  <span>Name background</span>
+                  <input
+                    type="checkbox"
+                    checked={props.chatEmoteSettings.nameBackgroundEnabled}
+                    onChange={(event) => {
+                      props.onChatEmoteSettingsChange({
+                        ...props.chatEmoteSettings,
+                        nameBackgroundEnabled: event.target.checked,
+                      });
+                      toast.success(
+                        `Name backgrounds ${event.target.checked ? "shown" : "hidden"}`,
+                      );
+                    }}
+                    title="Show or hide the colored background behind sender names"
+                  />
+                </label>
+              )}
+              {props.chatEmoteSettings.showNames &&
+                props.chatEmoteSettings.nameBackgroundEnabled && (
+                  <label className="chat-emote-setting">
+                    <span>Background color</span>
+                    <input
+                      type="color"
+                      value={props.chatEmoteSettings.nameBackgroundColor}
+                      onChange={(event) =>
+                        props.onChatEmoteSettingsChange({
+                          ...props.chatEmoteSettings,
+                          nameBackgroundColor: event.target.value,
+                        })
+                      }
+                      title="Choose the background color behind sender names"
+                    />
+                  </label>
+                )}
+              {props.chatEmoteSettings.showNames && (
+                <label className="chat-emote-range">
+                  <span>Name text size</span>
+                  <input
+                    type="range"
+                    min="9"
+                    max="32"
+                    step="1"
+                    value={props.chatEmoteSettings.nameFontSize}
+                    onChange={(event) =>
+                      props.onChatEmoteSettingsChange({
+                        ...props.chatEmoteSettings,
+                        nameFontSize: Number(event.target.value),
+                      })
+                    }
+                    title="Set the sender-name text size"
+                  />
+                  <strong>{props.chatEmoteSettings.nameFontSize}px</strong>
+                </label>
+              )}
+              <label className="chat-emote-setting chat-emote-setting--motion">
+              <span>Movement</span>
+              <span
+                className="chat-emote-motion-toggle"
+                title="Choose gravity-based floor bounces or continuous wall-to-wall movement"
+              >
+                {(["floor", "walls"] as const).map((motion) => (
+                  <button
+                    key={motion}
+                    type="button"
+                    className={
+                      props.chatEmoteSettings.motion === motion ? "active" : ""
+                    }
+                    aria-pressed={props.chatEmoteSettings.motion === motion}
+                    onClick={() => {
+                      if (props.chatEmoteSettings.motion === motion) return;
+                      props.onChatEmoteSettingsChange({
+                        ...props.chatEmoteSettings,
+                        motion,
+                      });
+                      toast.success(
+                        motion === "floor"
+                          ? "Using floor bounce physics"
+                          : "Using wall-to-wall bounce",
+                      );
+                    }}
+                    title={
+                      motion === "floor"
+                        ? "Use gravity and floor-impact physics"
+                        : "Bounce continuously between all screen edges"
+                    }
+                  >
+                    {motion === "floor" ? "Floor" : "Walls"}
+                  </button>
+                ))}
+              </span>
+              </label>
+            </div>
+            <div className="chat-emote-card">
+              <strong className="chat-emote-card__title">Motion & limits</strong>
+              {([
+                ["Emote size", "size", 24, 100, 2, "px"],
+                ["Movement speed", "speed", 40, 600, 10, " px/s"],
+                ["Gravity", "gravity", 100, 2400, 50, " px/s²"],
+                ["Lifetime", "lifetimeSeconds", 2, 120, 1, "s"],
+                ["Maximum visible", "maxVisible", 1, 100, 1, ""],
+              ] as const)
+                .filter(([, key]) => key !== "gravity" || props.chatEmoteSettings.motion === "floor")
+                .map(([label, key, min, max, step, suffix]) => (
+                  <label className="chat-emote-range" key={key}>
+                    <span>{label}</span>
+                    <input
+                      type="range"
+                      min={min}
+                      max={max}
+                      step={step}
+                      value={props.chatEmoteSettings[key]}
+                      onChange={(event) =>
+                        props.onChatEmoteSettingsChange({
+                          ...props.chatEmoteSettings,
+                          [key]: Number(event.target.value),
+                        })
+                      }
+                      title={`Set ${label.toLowerCase()}`}
+                    />
+                    <strong>{props.chatEmoteSettings[key]}{suffix}</strong>
+                  </label>
+                ))}
+            </div>
+            <div className="chat-emote-card">
+              <strong className="chat-emote-card__title">Blocked chatters</strong>
+              <span className="chat-emote-card__description">
+                These Twitch usernames cannot spawn chat emotes. Commands are unaffected.
+              </span>
+              <div className="chat-emote-blacklist__add">
+                <input
+                  style={fieldStyle}
+                  value={blacklistName}
+                  onChange={(event) =>
+                    setBlacklistName(
+                      event.target.value.replace(/^@/, "").toLowerCase(),
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    event.currentTarget.nextElementSibling instanceof HTMLButtonElement &&
+                      event.currentTarget.nextElementSibling.click();
+                  }}
+                  placeholder="username"
+                  maxLength={25}
+                  title="Enter a Twitch username to prevent their emotes from appearing"
+                />
+                <button
+                  type="button"
+                  className="ui-button ui-button--compact"
+                  disabled={
+                    !/^[a-z0-9_]{1,25}$/.test(blacklistName) ||
+                    props.chatEmoteSettings.blacklist.includes(blacklistName)
+                  }
+                  onClick={() => {
+                    if (!/^[a-z0-9_]{1,25}$/.test(blacklistName)) {
+                      toast.error("Enter a valid Twitch username");
+                      return;
+                    }
+                    props.onChatEmoteSettingsChange({
+                      ...props.chatEmoteSettings,
+                      blacklist: [...props.chatEmoteSettings.blacklist, blacklistName],
+                    });
+                    toast.success(`@${blacklistName} blocked from chat emotes`);
+                    setBlacklistName("");
+                  }}
+                  title="Add this username to the chat-emote blacklist"
+                >
+                  <Plus size={13} /> Block
+                </button>
+              </div>
+              {props.chatEmoteSettings.blacklist.length ? (
+                <div className="chat-emote-blacklist">
+                  {props.chatEmoteSettings.blacklist.map((username) => (
+                    <span key={username}>
+                      @{username}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          props.onChatEmoteSettingsChange({
+                            ...props.chatEmoteSettings,
+                            blacklist: props.chatEmoteSettings.blacklist.filter(
+                              (item) => item !== username,
+                            ),
+                          });
+                          toast.success(`@${username} removed from the blacklist`);
+                        }}
+                        title={`Allow @${username} to spawn chat emotes again`}
+                        aria-label={`Remove ${username} from blacklist`}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="chat-emote-blacklist__empty">No blocked chatters</span>
+              )}
+            </div>
+            <p className="chat-emote-note">
+              Both channel 7TV sets follow the active preview. Native Vicksy and Wixels Twitch emotes are recognized from chat in either channel. Images remain on their providers’ CDNs.
+            </p>
           </Section>
         )}
       </div>

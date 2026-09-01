@@ -30,6 +30,7 @@ import {
   Repeat2,
   RotateCcw,
   Settings,
+  MessageCircle,
   X,
 } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
@@ -108,6 +109,8 @@ export function Dashboard({
     setShowCursorOnOverlay,
     dvdCelebrationSettings,
     setDvdCelebrationSettings,
+    chatEmoteSettings,
+    setChatEmoteSettings,
     strokes,
     liveStrokes,
     addElement,
@@ -513,6 +516,16 @@ export function Dashboard({
           {twitchChannel.charAt(0).toUpperCase() + twitchChannel.slice(1)}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {chatEmoteSettings.enabled && (
+            <span
+              className="chat-emote-active-indicator"
+              title="Chat emote mode is active on the OBS overlay. Live chat emotes are intentionally not mirrored on the dashboard; use Studio → Emotes for a local preview."
+            >
+              <span className="chat-emote-active-indicator__dot" />
+              <MessageCircle size={13} />
+              Chat emotes active
+            </span>
+          )}
           {isAdmin && (
             <>
               <button
@@ -618,7 +631,7 @@ export function Dashboard({
             title={
               showStudio
                 ? "Close production tools"
-                : "Open scenes, presets, sounds, and chat commands"
+                : "Open sounds, chat commands, emotes, and overlay effects"
             }
             style={{
               background: showStudio ? "var(--accent-surface)" : "#181818",
@@ -1558,6 +1571,8 @@ export function Dashboard({
             dvdSoundUploading={dvdSoundUploading}
             onDvdSettingsChange={setDvdCelebrationSettings}
             onDvdSoundUpload={handleDvdSoundUpload}
+            chatEmoteSettings={chatEmoteSettings}
+            onChatEmoteSettingsChange={setChatEmoteSettings}
           />
         </div>
       </div>

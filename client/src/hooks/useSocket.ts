@@ -9,6 +9,8 @@ import type {
   DrawStroke,
   LiveDrawStroke,
   DvdCelebrationSettings,
+  ChatEmoteSettings,
+  ChatEmoteSpawn,
   StudioState,
   SoundboardItem,
   OverlayTrigger,
@@ -61,6 +63,23 @@ export function useSocket({
       soundUrl: null,
       counterPosition: "top-right",
     });
+  const [chatEmoteSettings, setChatEmoteSettingsState] =
+    useState<ChatEmoteSettings>({
+      enabled: false,
+      showNames: true,
+      nameBackgroundEnabled: true,
+      nameBackgroundColor: "#08080a",
+      nameFontSize: 12,
+      motion: "floor",
+      gravity: 900,
+      size: 40,
+      speed: 180,
+      lifetimeSeconds: 12,
+      maxVisible: 20,
+      blacklist: [],
+    });
+  const [chatEmoteSpawn, setChatEmoteSpawn] =
+    useState<ChatEmoteSpawn | null>(null);
   const [studio, setStudio] = useState<StudioState>({
     scenes: [],
     presets: [],
@@ -226,7 +245,6 @@ export function useSocket({
         ...normalizedChanges,
       });
     });
-
     socket.on("media:control", (payload) =>
       onMediaControlRef.current?.(payload),
     );
@@ -301,6 +319,8 @@ export function useSocket({
       });
     });
     socket.on("dvd:settings", setDvdCelebrationSettingsState);
+    socket.on("chat-emote:settings", setChatEmoteSettingsState);
+    socket.on("chat-emote:spawn", setChatEmoteSpawn);
     socket.on("studio:sync", setStudio);
     socket.on("history:status", setHistoryStatus);
     socket.on("chat:channel", ({ channel }) => setChatChannelState(channel));
@@ -440,6 +460,10 @@ export function useSocket({
     },
     [],
   );
+  const setChatEmoteSettings = useCallback((settings: ChatEmoteSettings) => {
+    setChatEmoteSettingsState(settings);
+    socketRef.current?.emit("chat-emote:settings", settings);
+  }, []);
 
   const undo = useCallback(() => socketRef.current?.emit("history:undo"), []);
   const redo = useCallback(() => socketRef.current?.emit("history:redo"), []);
@@ -532,6 +556,9 @@ export function useSocket({
     setShowCursorOnOverlay,
     dvdCelebrationSettings,
     setDvdCelebrationSettings,
+    chatEmoteSettings,
+    setChatEmoteSettings,
+    chatEmoteSpawn,
     strokes,
     liveStrokes,
     studio,

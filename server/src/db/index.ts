@@ -2,7 +2,7 @@ import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
 import { mkdirSync } from 'fs';
 import path from 'path';
-import type { ElementPreset, OverlayTrigger, SavedScene, SoundboardItem } from '../types.js';
+import type { ChatEmoteSettings, ElementPreset, OverlayTrigger, SavedScene, SoundboardItem } from '../types.js';
 
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
 mkdirSync(DATA_DIR, { recursive: true });
@@ -20,6 +20,7 @@ interface DbSchema {
   presets: ElementPreset[];
   sounds: SoundboardItem[];
   triggers: OverlayTrigger[];
+  chatEmoteSettings?: ChatEmoteSettings;
   twitchAuth?: { encryptedAccessToken: string; encryptedRefreshToken: string; expiresAt: number; userId: string };
 }
 
@@ -61,6 +62,15 @@ export async function removeFromWhitelist(username: string): Promise<void> {
 
 export function getStudioData() {
   return { scenes: db.data.scenes, presets: db.data.presets, sounds: db.data.sounds, triggers: db.data.triggers };
+}
+
+export function getChatEmoteSettings(): ChatEmoteSettings | undefined {
+  return db.data.chatEmoteSettings;
+}
+
+export async function saveChatEmoteSettings(settings: ChatEmoteSettings): Promise<void> {
+  db.data.chatEmoteSettings = settings;
+  await db.write();
 }
 
 export async function saveStudioData(data: Partial<ReturnType<typeof getStudioData>>): Promise<void> {

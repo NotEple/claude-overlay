@@ -79,7 +79,7 @@ const sections = [
         "Switch both the preview and chat command listener between Vicksy and Wixels.",
       ],
       ["Refresh overlay", "Ask connected overlay browser sources to reload."],
-      ["Studio", "Open scenes, presets, sounds, commands, and DVD effects."],
+      ["Studio", "Open sounds, commands, chat emotes, and DVD effects."],
     ],
   },
   {
@@ -104,6 +104,10 @@ const sections = [
       [
         "Effects · Preview",
         "Listen to the selected DVD corner sound locally at its configured volume.",
+      ],
+      [
+        "Studio · Emotes",
+        "Tune gravity, size, sender-label colors, and wall/floor motion; blacklist chatters and preview locally. Wide emotes keep their natural proportions, and each sender gets one active emote.",
       ],
       [
         "Show my cursor on overlay",

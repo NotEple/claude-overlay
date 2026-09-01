@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import { randomUUID } from "crypto";
 import type { AuthUser } from "../auth/routes.js";
-import { saveStudioData } from "../db/index.js";
+import { saveChatEmoteSettings, saveStudioData } from "../db/index.js";
 import type { CanvasStore } from "../state/canvasStore.js";
 import type {
   ClientToServerEvents,
@@ -19,6 +19,7 @@ export type ActiveUser = UserPresencePayload & { socketId: string };
 const MAX_ELEMENTS = 1_000;
 const MAX_STROKES = 10_000;
 const HISTORY_LIMIT = 30;
+let chatEmoteSettingsSaveTimer: NodeJS.Timeout | undefined;
 
 const clone = <T>(value: T): T => structuredClone(value);
 function studioState(store: CanvasStore) {
@@ -49,6 +50,7 @@ export function registerSocketHandlers(
   socket.emit("state:sync", canvasState);
   socket.emit("draw:sync", drawStrokes);
   socket.emit("dvd:settings", store.dvdCelebrationSettings);
+  socket.emit("chat-emote:settings", store.chatEmoteSettings);
   if (!isOverlay) socket.emit("chat:channel", { channel: getTwitchChatChannel() });
   if (!isOverlay && user) {
     socket.emit("studio:sync", studioState(store));
@@ -183,6 +185,29 @@ export function registerSocketHandlers(
   socket.on("draw:live", (data) => {
     if (!validLiveStroke(data)) return;
     socket.volatile.broadcast.emit("draw:live", { ...data, userId: user.id } as LiveDrawStroke);
+  });
+  socket.on("chat-emote:settings", (settings) => {
+    if (
+      typeof settings.enabled !== "boolean" ||
+      typeof settings.showNames !== "boolean" ||
+      typeof settings.nameBackgroundEnabled !== "boolean" ||
+      typeof settings.nameBackgroundColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settings.nameBackgroundColor) ||
+      !Number.isFinite(settings.nameFontSize) || settings.nameFontSize < 9 || settings.nameFontSize > 32 ||
+      !["walls", "floor"].includes(settings.motion) ||
+      !Number.isFinite(settings.gravity) || settings.gravity < 100 || settings.gravity > 2400 ||
+      !Number.isFinite(settings.size) || settings.size < 24 || settings.size > 100 ||
+      !Number.isFinite(settings.speed) || settings.speed < 40 || settings.speed > 600 ||
+      !Number.isFinite(settings.lifetimeSeconds) || settings.lifetimeSeconds < 2 || settings.lifetimeSeconds > 120 ||
+      !Number.isInteger(settings.maxVisible) || settings.maxVisible < 1 || settings.maxVisible > 100 ||
+      !Array.isArray(settings.blacklist) || settings.blacklist.length > 100 ||
+      settings.blacklist.some((name) => typeof name !== "string" || !/^[a-z0-9_]{1,25}$/i.test(name))
+    ) return;
+    store.chatEmoteSettings = { ...settings };
+    io.emit("chat-emote:settings", store.chatEmoteSettings);
+    if (chatEmoteSettingsSaveTimer) clearTimeout(chatEmoteSettingsSaveTimer);
+    chatEmoteSettingsSaveTimer = setTimeout(() => {
+      void saveChatEmoteSettings(store.chatEmoteSettings);
+    }, 300);
   });
 
   socket.on("history:undo", () => {

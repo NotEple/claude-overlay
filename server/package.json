@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
-    "test": "tsc && node --test dist/auth/jwt.test.js dist/auth/routes.test.js dist/socket/validation.test.js",
+    "test": "tsc && node --test dist/auth/jwt.test.js dist/auth/routes.test.js dist/socket/validation.test.js dist/seventv/emotes.test.js",
     "start": "node dist/index.js"
   },
   "dependencies": {
