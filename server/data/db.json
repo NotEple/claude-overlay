@@ -18,5 +18,25 @@
       "added_at": "2026-06-15T19:23:53Z",
       "isAdmin": false
     }
-  ]
+  ],
+  "scenes": [],
+  "presets": [],
+  "sounds": [],
+  "triggers": [],
+  "chatEmoteSettings": {
+    "enabled": false,
+    "showNames": true,
+    "nameBackgroundEnabled": false,
+    "nameBackgroundColor": "#08080a",
+    "nameFontSize": 18,
+    "motion": "floor",
+    "gravity": 400,
+    "size": 60,
+    "speed": 240,
+    "lifetimeSeconds": 20,
+    "maxVisible": 10,
+    "blacklist": [
+      "gekkerbot"
+    ]
+  }
 }
