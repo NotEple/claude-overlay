@@ -459,11 +459,14 @@ button {
   color: #aeb6c2;
 }
 .studio-tabs {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   border-bottom: 1px solid #292929;
 }
 .studio-tabs button {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   height: 50px;
   padding: 5px 2px;
@@ -472,17 +475,30 @@ button {
   align-content: center;
   gap: 3px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-bottom: 0;
   background: transparent;
   color: #9aa2ae;
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
 }
 .studio-tabs button.active {
   color: var(--accent-text);
-  border-bottom-color: var(--accent-border);
   background: var(--accent-surface);
+}
+.studio-tab-indicator {
+  position: absolute;
+  z-index: 2;
+  bottom: 0;
+  left: 0;
+  width: 20%;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent-border);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-border) 55%, transparent);
+  pointer-events: none;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .studio-panel__body {
   min-height: 0;
@@ -509,6 +525,85 @@ button {
   border: 1px solid var(--accent-border) !important;
   background: var(--accent-solid) !important;
   color: var(--accent-contrast) !important;
+}
+
+.command-chain {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #35353b;
+  border-radius: 6px;
+  background: #141416;
+  color: #c9d0da;
+  font-size: 11px;
+}
+.command-chain > strong {
+  color: #e6e9ee;
+  font-size: 11px;
+}
+.command-chain__step {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.command-chain__actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+.command-chain__step .ui-icon-button {
+  width: 25px;
+  height: 25px;
+  flex: none;
+  border: 1px solid #404047;
+  background: #232327;
+  color: #cbd1da;
+}
+.command-chain__step .command-chain__delete {
+  border: 1px solid #4b2424;
+  background: #2a1717;
+  color: #f0a3a3;
+}
+.command-chain__pending {
+  color: var(--accent-text);
+}
+.command-chain__add {
+  width: 100%;
+  border: 1px dashed #50505a;
+  background: #1c1c20;
+  color: #d1d6de;
+}
+.command-timing {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  align-items: center;
+  gap: 8px;
+  color: #aab2bf;
+  font-size: 11px;
+}
+.dvd-sound-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dvd-sound-status > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.dvd-sound-status span {
+  color: #8f99a8;
+  font-size: 10px;
+}
+.dvd-sound-status strong {
+  overflow: hidden;
+  color: #e3e7ed;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .studio-primary:disabled {
   opacity: 0.45;
@@ -585,4 +680,24 @@ button {
 
   --color-text: hsl(0 0% 95%);
   --color-text-muted: hsl(0 0% 75%);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #48484f #171719;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: #171719;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  border: 2px solid #171719;
+  border-radius: 8px;
+  background: #48484f;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #62626c;
 }

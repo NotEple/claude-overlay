@@ -5,7 +5,7 @@
  * - DOM elements, no canvas library
  * - Left-drag on background = pan OR marquee select
  * - Left-drag on element = move (all selected move together)
- * - Right-drag on element = rotate
+ * - Dedicated top-center rotation handle
  * - 8 resize handles: corners + edges; drag past 0 flips via negative scaleX/scaleY
  * - Video: transparent drag overlay captures mousedown before video does
  * - Groups: elements with same groupId are selected/moved together
@@ -50,6 +50,7 @@ import {
   FlipHorizontal2,
   FlipVertical2,
   RefreshCw,
+  RotateCw,
   Lock,
   Unlock,
 } from "lucide-react";
@@ -280,8 +281,91 @@ function addResizeHandle(
   return btn;
 }
 
+function addRotationHandle(
+  container: HTMLElement,
+  onUpdate: (changes: Partial<CanvasElement>) => void,
+  canRotate: () => boolean = () => true,
+  onStart?: () => void,
+  onEnd?: () => void,
+) {
+  const handle = document.createElement("div");
+  handle.className = "rh rotation-handle";
+  handle.title = "Drag to rotate · Hold Shift to snap to 15° increments";
+  handle.setAttribute("role", "button");
+  handle.setAttribute("aria-label", "Rotate element");
+  handle.style.cssText =
+    "position:absolute;top:-38px;left:50%;transform:translateX(-50%);" +
+    "width:18px;height:18px;display:none;align-items:center;justify-content:center;" +
+    "box-sizing:border-box;border:1.5px solid var(--accent-border);border-radius:50%;" +
+    "background:#fff;color:#303038;cursor:grab;z-index:22;touch-action:none;" +
+    "box-shadow:0 1px 4px rgba(0,0,0,.45);";
+  handle.innerHTML = iconHTML(RotateCw, 11);
+
+  const connector = document.createElement("span");
+  connector.style.cssText =
+    "position:absolute;left:50%;top:16px;width:1.5px;height:22px;" +
+    "transform:translateX(-50%);background:var(--accent-border);pointer-events:none;z-index:-1;";
+  handle.appendChild(connector);
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !canRotate()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handle.style.cursor = "grabbing";
+    handle.setPointerCapture(event.pointerId);
+    onStart?.();
+
+    const rect = container.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const startRotation = getRotation(container);
+    const startAngle = Math.atan2(
+      event.clientY - centerY,
+      event.clientX - centerX,
+    );
+    let pending: Partial<CanvasElement> | null = null;
+    let lastEmit = 0;
+
+    const move = (moveEvent: PointerEvent) => {
+      const angle = Math.atan2(
+        moveEvent.clientY - centerY,
+        moveEvent.clientX - centerX,
+      );
+      let rotation =
+        startRotation + ((angle - startAngle) * 180) / Math.PI;
+      if (moveEvent.shiftKey) rotation = Math.round(rotation / 15) * 15;
+      setRotation(container, rotation);
+      applyNodeTransform(container);
+      pending = { rotation };
+      const now = Date.now();
+      if (now - lastEmit >= 16) {
+        lastEmit = now;
+        onUpdate(pending);
+        pending = null;
+      }
+    };
+    const finish = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", finish);
+      handle.removeEventListener("pointercancel", finish);
+      if (handle.hasPointerCapture(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId);
+      }
+      handle.style.cursor = "grab";
+      if (pending) onUpdate(pending);
+      onEnd?.();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
+  });
+
+  container.appendChild(handle);
+  return handle;
+}
+
 // ---------------------------------------------------------------------------
-// makeDraggable — move + rotate
+// makeDraggable — move
 // ---------------------------------------------------------------------------
 function makeDraggable(
   el: HTMLElement,
@@ -310,47 +394,6 @@ function makeDraggable(
       if (targetVideo) {
         const videoRect = targetVideo.getBoundingClientRect();
         if (e.clientY >= videoRect.bottom - Math.min(48, videoRect.height * 0.3)) return;
-      }
-
-      // Right-click = rotate
-      if (e.button === 2) {
-        e.preventDefault();
-        options.onDragStart?.();
-        const rect = el.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        const startRot = getRotation(el);
-        const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
-        let rotLastEmit = 0;
-        let rotPending: Partial<CanvasElement> | null = null;
-        const onMove = (ev: MouseEvent) => {
-          const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx);
-          const delta = (angle - startAngle) * (180 / Math.PI);
-          const newDeg = startRot + delta;
-          setRotation(el, newDeg);
-          applyNodeTransform(el);
-          const ch = {
-            x: parseFloat(el.style.left),
-            y: parseFloat(el.style.top),
-            rotation: newDeg,
-          };
-          rotPending = ch;
-          const now = Date.now();
-          if (now - rotLastEmit > 16) {
-            rotLastEmit = now;
-            onUpdate(ch);
-            rotPending = null;
-          }
-        };
-        const onUp = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          if (rotPending) onUpdate(rotPending);
-          options.onDragEnd?.();
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-        return;
       }
 
       if (e.button !== 0) return;
@@ -651,7 +694,7 @@ function createMediaElement(
 
     const dragHandle = document.createElement("div");
     dragHandle.className = "video-drag-handle";
-    dragHandle.title = "Drag to move · Right-drag to rotate";
+    dragHandle.title = "Drag to move · Use the round handle above the selection to rotate";
     dragHandle.style.cssText =
       "position:absolute;top:0;left:0;right:0;bottom:48px;z-index:2;" +
       "cursor:move;user-select:none;box-sizing:border-box;";
@@ -708,7 +751,7 @@ function createMediaElement(
 
     const name = getFileLabel(src) || "Audio";
     const label = document.createElement("div");
-    label.title = `${name} · Drag to move · Right-drag to rotate`;
+    label.title = `${name} · Drag to move · Use the round handle above the selection to rotate`;
     label.style.cssText =
       "height:30px;flex-shrink:0;padding:0 10px;box-sizing:border-box;color:#d6d8de;" +
       "font:600 11px Inter,sans-serif;display:flex;align-items:center;gap:6px;cursor:move;" +
@@ -2091,6 +2134,16 @@ export function CanvasStage({
           draggingRef.current.clear();
         };
 
+        addRotationHandle(
+          node,
+          (changes) => onElementChange(el.id, changes),
+          () =>
+            !elementsRef.current.find((element) => element.id === el.id)
+              ?.locked,
+          onDragStart,
+          onDragEnd,
+        );
+
         makeDraggable(
           node,
           getZoom,
@@ -2215,7 +2268,12 @@ export function CanvasStage({
         ? "flex"
         : "none";
       for (const h of node.querySelectorAll<HTMLElement>(".rh")) {
-        h.style.display = isSelected && !el.locked ? "block" : "none";
+        h.style.display =
+          isSelected && !el.locked
+            ? h.classList.contains("rotation-handle")
+              ? "flex"
+              : "block"
+            : "none";
       }
     }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AudioLines,
   Clapperboard,
@@ -20,6 +20,7 @@ import type {
   TriggerPlacement,
   FlyDirection,
   ChatPermission,
+  TriggerStep,
 } from "../types";
 import { randomUUID } from "../utils";
 import { getFileLabel } from "../canvas/config";
@@ -98,6 +99,12 @@ const triggerActionOptions: Array<{
 const triggerActionLabel = (action: OverlayTrigger["action"]) =>
   triggerActionOptions.find((option) => option.value === action)?.label ??
   action;
+const triggerTimingLabel = (step: TriggerStep, index: number) => {
+  if (index === 0 || !step.timing || step.timing === "immediate")
+    return "same time";
+  if (step.timing === "after-previous") return "after previous";
+  return `after ${step.delaySeconds ?? 1}s`;
+};
 const rowStyle = {
   display: "flex",
   alignItems: "center",
@@ -115,7 +122,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const [soundUrl, setSoundUrl] = useState("");
   const [triggerAction, setTriggerAction] =
     useState<OverlayTrigger["action"]>("show-element");
-  const [triggerMatch, setTriggerMatch] = useState("<fox");
+  const [triggerMatch, setTriggerMatch] = useState("<");
   const [targetId, setTargetId] = useState("");
   const [cooldown, setCooldown] = useState(5);
   const [triggerPlacement, setTriggerPlacement] =
@@ -125,17 +132,71 @@ export function StudioPanel(props: StudioPanelProps) {
   const [duration, setDuration] = useState(5);
   const [permission, setPermission] = useState<ChatPermission>("everyone");
   const [editingTriggerId, setEditingTriggerId] = useState<string | null>(null);
+  const [chainedSteps, setChainedSteps] = useState<TriggerStep[]>([]);
+  const [editingChainIndex, setEditingChainIndex] = useState<number | null>(null);
+  const [stepTiming, setStepTiming] = useState<NonNullable<TriggerStep["timing"]>>("immediate");
+  const [stepDelay, setStepDelay] = useState(1);
   const [uploading, setUploading] = useState(false);
+  const dvdPreviewAudio = useRef<HTMLAudioElement | null>(null);
+  const pendingStepBeforeChainEdit = useRef<TriggerStep | null>(null);
+
+  const currentTriggerStep = (): TriggerStep => ({
+    action: triggerAction,
+    targetId: targetId || undefined,
+    placement: ["play-media", "show-temporary"].includes(triggerAction)
+      ? triggerPlacement
+      : undefined,
+    durationSeconds: ["show-temporary", "fly-across"].includes(triggerAction)
+      ? duration
+      : undefined,
+    flyDirection: triggerAction === "fly-across" ? flyDirection : undefined,
+    timing: stepTiming,
+    delaySeconds: stepTiming === "delay" ? stepDelay : undefined,
+  });
+
+  const resetTriggerStep = () => {
+    setTriggerAction("show-element");
+    setTargetId("");
+    setTriggerPlacement("current");
+    setFlyDirection("left-to-right-bottom");
+    setDuration(5);
+    setStepTiming("immediate");
+    setStepDelay(1);
+    setEditingChainIndex(null);
+  };
+
+  const loadTriggerStep = (step: TriggerStep) => {
+    setTriggerAction(step.action);
+    setTargetId(step.targetId ?? "");
+    setTriggerPlacement(step.placement ?? "current");
+    setFlyDirection(step.flyDirection ?? "left-to-right-bottom");
+    setDuration(step.durationSeconds ?? 5);
+    setStepTiming(step.timing ?? "immediate");
+    setStepDelay(step.delaySeconds ?? 1);
+  };
+
+  const resetTriggerForm = () => {
+    setName("");
+    setTriggerMatch("<");
+    setCooldown(5);
+    setPermission("everyone");
+    setChainedSteps([]);
+    setEditingTriggerId(null);
+    pendingStepBeforeChainEdit.current = null;
+    resetTriggerStep();
+  };
 
   const createScene = () => {
     if (name.trim()) {
       props.onSaveScene(randomUUID(), name.trim());
+      toast.success(`Scene “${name.trim()}” saved`);
       setName("");
     }
   };
   const createPreset = () => {
     if (name.trim() && props.selectedIds.size) {
       props.onSavePreset(randomUUID(), name.trim(), [...props.selectedIds]);
+      toast.success(`Preset “${name.trim()}” saved`);
       setName("");
     }
   };
@@ -147,6 +208,7 @@ export function StudioPanel(props: StudioPanelProps) {
         url: soundUrl.trim(),
         volume: 0.25,
       });
+      toast.success(`Sound “${name.trim()}” added`);
       setName("");
       setSoundUrl("");
     }
@@ -181,8 +243,13 @@ export function StudioPanel(props: StudioPanelProps) {
     }
   };
   const createTrigger = () => {
+    if (editingChainIndex !== null) {
+      toast.error("Finish updating the command action first");
+      return;
+    }
     if (!name.trim() || (triggerAction !== "refresh-overlay" && !targetId))
       return;
+    const steps = [...chainedSteps, currentTriggerStep()];
     props.onSaveTrigger({
       id: editingTriggerId ?? randomUUID(),
       name: name.trim(),
@@ -193,44 +260,108 @@ export function StudioPanel(props: StudioPanelProps) {
         : true,
       event: "chat-command",
       match: triggerMatch.trim() || undefined,
-      action: triggerAction,
-      targetId: targetId || undefined,
+      ...steps[0],
       cooldownSeconds: cooldown,
-      placement: ["play-media", "show-temporary"].includes(triggerAction)
-        ? triggerPlacement
-        : undefined,
-      durationSeconds:
-        ["show-temporary", "fly-across"].includes(triggerAction)
-          ? duration
-          : undefined,
-      flyDirection:
-        triggerAction === "fly-across" ? flyDirection : undefined,
       permission,
+      steps: steps.length > 1 ? steps : undefined,
     });
     toast.success(
       editingTriggerId ? "Chat command updated" : "Chat command added",
     );
-    setName("");
-    setEditingTriggerId(null);
+    resetTriggerForm();
   };
 
   const editTrigger = (trigger: OverlayTrigger) => {
+    pendingStepBeforeChainEdit.current = null;
+    setEditingChainIndex(null);
     setEditingTriggerId(trigger.id);
     setName(trigger.name);
     setTriggerMatch(trigger.match ?? "");
-    setTriggerAction(trigger.action);
-    setTargetId(trigger.targetId ?? "");
+    const steps = trigger.steps?.length ? trigger.steps : [trigger];
+    const current = steps.at(-1)!;
+    setChainedSteps(steps.slice(0, -1));
+    loadTriggerStep(current);
     setCooldown(trigger.cooldownSeconds);
-    setTriggerPlacement(trigger.placement ?? "current");
-    setFlyDirection(trigger.flyDirection ?? "left-to-right-bottom");
-    setDuration(trigger.durationSeconds ?? 5);
     setPermission(trigger.permission ?? "everyone");
   };
 
   const cancelTriggerEdit = () => {
-    setEditingTriggerId(null);
-    setName("");
+    resetTriggerForm();
+    toast.info("Command editing cancelled");
   };
+
+  const addChainedStep = () => {
+    if (triggerAction !== "refresh-overlay" && !targetId) {
+      toast.error("Choose a target before adding this action");
+      return;
+    }
+    if (chainedSteps.length >= 9 && editingChainIndex === null) {
+      toast.error("A command can contain up to 10 actions");
+      return;
+    }
+    if (editingChainIndex !== null) {
+      setChainedSteps((steps) =>
+        steps.map((step, index) =>
+          index === editingChainIndex ? currentTriggerStep() : step,
+        ),
+      );
+      toast.success("Command action updated");
+      const pendingStep = pendingStepBeforeChainEdit.current;
+      pendingStepBeforeChainEdit.current = null;
+      if (pendingStep) loadTriggerStep(pendingStep);
+      else resetTriggerStep();
+      setEditingChainIndex(null);
+    } else {
+      setChainedSteps((steps) => [...steps, currentTriggerStep()]);
+      toast.success("Action added to command chain");
+      resetTriggerStep();
+    }
+  };
+
+  const editChainedStep = (step: TriggerStep, index: number) => {
+    if (editingChainIndex === null)
+      pendingStepBeforeChainEdit.current = currentTriggerStep();
+    setEditingChainIndex(index);
+    loadTriggerStep(step);
+  };
+
+  const previewDvdSound = () => {
+    dvdPreviewAudio.current?.pause();
+    const volume = props.dvdCelebrationSettings.volume;
+    const url = props.dvdCelebrationSettings.soundUrl;
+    if (url) {
+      const audio = new Audio(url);
+      audio.volume = volume;
+      dvdPreviewAudio.current = audio;
+      void audio.play().then(
+        () => toast.info("Previewing DVD corner sound locally"),
+        () => toast.error("DVD sound preview could not be played"),
+      );
+      return;
+    }
+    try {
+      const context = new AudioContext();
+      [659.25, 783.99, 1046.5].forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const start = context.currentTime + index * 0.11;
+        oscillator.type = "triangle";
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(Math.max(0.001, volume * 0.22), start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start + 0.21);
+      });
+      toast.info("Previewing built-in DVD corner chime locally");
+    } catch {
+      toast.error("DVD sound preview could not be played");
+    }
+  };
+
+  const currentStepIsFirst =
+    editingChainIndex === 0 ||
+    (editingChainIndex === null && chainedSteps.length === 0);
 
   return (
     <aside className="studio-panel">
@@ -259,6 +390,13 @@ export function StudioPanel(props: StudioPanelProps) {
             <span>{label}</span>
           </button>
         ))}
+        <span
+          className="studio-tab-indicator"
+          style={{
+            transform: `translateX(${tabs.findIndex(([id]) => id === tab) * 100}%)`,
+          }}
+          aria-hidden="true"
+        />
       </div>
       <div className="studio-panel__body">
         {tab === "scenes" && (
@@ -283,13 +421,17 @@ export function StudioPanel(props: StudioPanelProps) {
                     window.confirm(
                       `Replace the current canvas with “${item.name}”? You can undo this action.`,
                     )
-                  )
+                  ) {
                     props.onLoadScene(item.id);
+                    toast.success(`Scene “${item.name}” loaded`);
+                  }
                 }}
                 primary="Load"
                 onDelete={() => {
-                  if (window.confirm(`Delete the saved scene “${item.name}”?`))
+                  if (window.confirm(`Delete the saved scene “${item.name}”?`)) {
                     props.onDeleteScene(item.id);
+                    toast.success(`Scene “${item.name}” deleted`);
+                  }
                 }}
               />
             ))}
@@ -317,9 +459,15 @@ export function StudioPanel(props: StudioPanelProps) {
                 key={item.id}
                 name={item.name}
                 detail={`${item.elements.length} element${item.elements.length === 1 ? "" : "s"}`}
-                onPrimary={() => props.onLoadPreset(item.id)}
+                onPrimary={() => {
+                  props.onLoadPreset(item.id);
+                  toast.success(`Preset “${item.name}” inserted`);
+                }}
                 primary="Insert"
-                onDelete={() => props.onDeletePreset(item.id)}
+                onDelete={() => {
+                  props.onDeletePreset(item.id);
+                  toast.success(`Preset “${item.name}” deleted`);
+                }}
               />
             ))}
           </Section>
@@ -430,7 +578,10 @@ export function StudioPanel(props: StudioPanelProps) {
                   </button>
                   <button
                     className="ui-button ui-button--compact ui-danger soundboard-action"
-                    onClick={() => props.onDeleteSound(item.id)}
+                    onClick={() => {
+                      props.onDeleteSound(item.id);
+                      toast.success(`Sound “${item.name}” deleted`);
+                    }}
                     title={`Delete ${item.name}`}
                   >
                     <Trash2 size={13} />
@@ -627,6 +778,110 @@ export function StudioPanel(props: StudioPanelProps) {
                 <Play size={12} /> Preview flight on dashboard
               </button>
             )}
+            {!currentStepIsFirst && (
+              <label className="command-timing">
+                <span>Start this action</span>
+                <select
+                  style={fieldStyle}
+                  value={stepTiming}
+                  onChange={(event) =>
+                    setStepTiming(
+                      event.target.value as NonNullable<TriggerStep["timing"]>,
+                    )
+                  }
+                  title="Choose whether this action starts immediately, after a delay, or when the previous timed media action finishes"
+                >
+                  <option value="immediate">At the same time</option>
+                  <option value="delay">After a delay</option>
+                  <option value="after-previous">After previous finishes</option>
+                </select>
+              </label>
+            )}
+            {!currentStepIsFirst && stepTiming === "delay" && (
+              <label className="command-timing">
+                <span>Delay (seconds)</span>
+                <input
+                  style={fieldStyle}
+                  type="number"
+                  min="0"
+                  max="3600"
+                  step="0.5"
+                  value={stepDelay}
+                  onChange={(event) =>
+                    setStepDelay(
+                      Math.min(3600, Math.max(0, Number(event.target.value))),
+                    )
+                  }
+                />
+              </label>
+            )}
+            {chainedSteps.length > 0 && (
+              <div className="command-chain" aria-label="Command action chain">
+                <strong>Action chain</strong>
+                {chainedSteps.map((step, index) => (
+                  <div className="command-chain__step" key={`${index}-${step.action}`}>
+                    <span>
+                      {index + 1}. {triggerActionLabel(step.action)} · {triggerTimingLabel(step, index)}
+                    </span>
+                    <div className="command-chain__actions">
+                      <button
+                        type="button"
+                        className="ui-icon-button"
+                        onClick={() => editChainedStep(step, index)}
+                        title={`Edit action ${index + 1}`}
+                        aria-label={`Edit action ${index + 1}`}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-icon-button command-chain__delete"
+                        onClick={() => {
+                          setChainedSteps((steps) =>
+                            steps.filter((_, stepIndex) => stepIndex !== index),
+                          );
+                          if (editingChainIndex === index) {
+                            const pendingStep = pendingStepBeforeChainEdit.current;
+                            pendingStepBeforeChainEdit.current = null;
+                            if (pendingStep) loadTriggerStep(pendingStep);
+                            else resetTriggerStep();
+                            setEditingChainIndex(null);
+                          }
+                          else if (
+                            editingChainIndex !== null &&
+                            editingChainIndex > index
+                          )
+                            setEditingChainIndex(editingChainIndex - 1);
+                          toast.success("Action removed from command chain");
+                        }}
+                        title={`Remove action ${index + 1} from this command`}
+                        aria-label={`Remove action ${index + 1}`}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <span className="command-chain__pending">
+                  {editingChainIndex !== null
+                    ? `Editing action ${editingChainIndex + 1}`
+                    : `${chainedSteps.length + 1}. ${triggerActionLabel(triggerAction)} (current)`}
+                </span>
+              </div>
+            )}
+            <button
+              type="button"
+              className="ui-button ui-button--compact command-chain__add"
+              onClick={addChainedStep}
+              disabled={
+                (chainedSteps.length >= 9 && editingChainIndex === null) ||
+                (triggerAction !== "refresh-overlay" && !targetId)
+              }
+              title="Keep this action and configure another action for the same chat command"
+            >
+              {editingChainIndex !== null ? <Save size={13} /> : <Plus size={13} />}
+              {editingChainIndex !== null ? "Update action" : "Add another action"}
+            </button>
             <label
               style={{
                 display: "grid",
@@ -678,6 +933,7 @@ export function StudioPanel(props: StudioPanelProps) {
               onClick={createTrigger}
               disabled={
                 !name.trim() ||
+                editingChainIndex !== null ||
                 (triggerAction !== "refresh-overlay" && !targetId)
               }
             >
@@ -704,14 +960,20 @@ export function StudioPanel(props: StudioPanelProps) {
                 <Item
                   key={item.id}
                   name={item.name}
-                  detail={`${item.match ?? "command"} → ${triggerActionLabel(item.action)} · ${item.permission ?? "everyone"}`}
+                  detail={`${item.match ?? "command"} → ${item.steps?.length ? `${item.steps.length} actions` : triggerActionLabel(item.action)} · ${item.permission ?? "everyone"}`}
                   onEdit={() => editTrigger(item)}
-                  onPrimary={() =>
-                    props.onSaveTrigger({ ...item, enabled: !item.enabled })
-                  }
+                  onPrimary={() => {
+                    props.onSaveTrigger({ ...item, enabled: !item.enabled });
+                    toast.success(
+                      `Command “${item.name}” ${item.enabled ? "disabled" : "enabled"}`,
+                    );
+                  }}
                   primary={item.enabled ? "Active" : "Disabled"}
                   active={item.enabled}
-                  onDelete={() => props.onDeleteTrigger(item.id)}
+                  onDelete={() => {
+                    props.onDeleteTrigger(item.id);
+                    toast.success(`Command “${item.name}” deleted`);
+                  }}
                 />
               ))}
           </Section>
@@ -722,6 +984,24 @@ export function StudioPanel(props: StudioPanelProps) {
             description="Configure global effects shared by every DVD-enabled element."
           >
             <div style={{ ...rowStyle, display: "grid", gap: 10 }}>
+              <div className="dvd-sound-status">
+                <div>
+                  <span>Current sound</span>
+                  <strong title={props.dvdCelebrationSettings.soundUrl ?? undefined}>
+                    {props.dvdCelebrationSettings.soundUrl
+                      ? getFileLabel(props.dvdCelebrationSettings.soundUrl)
+                      : "Built-in three-note chime"}
+                  </strong>
+                </div>
+                <button
+                  type="button"
+                  className="ui-button ui-button--compact soundboard-action"
+                  onClick={previewDvdSound}
+                  title="Preview the current DVD corner sound on this dashboard only"
+                >
+                  <Headphones size={13} /> Preview
+                </button>
+              </div>
               <label
                 style={{
                   display: "grid",

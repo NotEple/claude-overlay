@@ -45,7 +45,26 @@ export type TriggerActionType = 'show-element' | 'show-temporary' | 'fly-across'
 export type TriggerPlacement = 'current' | 'random' | 'fit' | 'fill' | 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
 export type FlyDirection = 'left-to-right-top' | 'left-to-right-center' | 'left-to-right-bottom' | 'right-to-left-top' | 'right-to-left-center' | 'right-to-left-bottom' | 'top-to-bottom-left' | 'top-to-bottom-center' | 'top-to-bottom-right' | 'bottom-to-top-left' | 'bottom-to-top-center' | 'bottom-to-top-right';
 export type ChatPermission = 'everyone' | 'vip' | 'moderator' | 'streamer';
-export interface OverlayTrigger { id: string; name: string; enabled: boolean; event: TriggerEventType; match?: string; minimum?: number; action: TriggerActionType; targetId?: string; cooldownSeconds: number; placement?: TriggerPlacement; durationSeconds?: number; flyDirection?: FlyDirection; permission?: ChatPermission; }
+export interface TriggerStep {
+  action: TriggerActionType;
+  targetId?: string;
+  placement?: TriggerPlacement;
+  durationSeconds?: number;
+  flyDirection?: FlyDirection;
+  timing?: "immediate" | "delay" | "after-previous";
+  delaySeconds?: number;
+}
+export interface OverlayTrigger extends TriggerStep {
+  id: string;
+  name: string;
+  enabled: boolean;
+  event: TriggerEventType;
+  match?: string;
+  minimum?: number;
+  cooldownSeconds: number;
+  permission?: ChatPermission;
+  steps?: TriggerStep[];
+}
 export interface ActivityItem { id: string; at: string; user: string; action: string; }
 export interface StudioState { scenes: SavedScene[]; presets: ElementPreset[]; sounds: SoundboardItem[]; triggers: OverlayTrigger[]; activity: ActivityItem[]; twitchConnected: boolean; }
 
@@ -124,7 +143,7 @@ export interface ServerToClientEvents {
   'dvd:settings': (settings: DvdCelebrationSettings) => void;
   'studio:sync': (state: StudioState) => void;
   'history:status': (status: { canUndo: boolean; canRedo: boolean }) => void;
-  'sound:play': (item: SoundboardItem) => void;
+  'sound:play': (item: SoundboardItem & { playbackId?: string }) => void;
   'chat:channel': (payload: { channel: string }) => void;
 }
 
@@ -134,6 +153,7 @@ export interface ClientToServerEvents {
   'element:remove': (payload: ElementRemovedPayload) => void;
   'media:control': (payload: MediaControlPayload) => void;
   'media:ended': (payload: { id: string }) => void;
+  'sound:ended': (payload: { playbackId: string }) => void;
   'cursor:move': (payload: { x: number; y: number; showOnOverlay: boolean }) => void;
   'overlay:refresh': () => void;
   'draw:stroke': (stroke: DrawStroke) => void;

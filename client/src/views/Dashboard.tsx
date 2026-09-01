@@ -196,7 +196,7 @@ export function Dashboard({
         const { url } = await response.json();
         setDvdCelebrationSettings({
           ...dvdCelebrationSettings,
-          soundUrl: `${SERVER_URL}${url}`,
+          soundUrl: `${SERVER_URL}${url}?name=${encodeURIComponent(file.name)}`,
         });
         toast.success(`${file.name} is now the DVD corner sound`);
       } catch (error) {
@@ -1367,18 +1367,42 @@ export function Dashboard({
                         width: "100%",
                         justifyContent: "space-between",
                         background: showCursorOnOverlay
-                          ? "var(--accent-surface-strong)"
-                          : "#202020",
+                          ? "#052e16"
+                          : "#2a1717",
                         border: showCursorOnOverlay
-                          ? "1px solid var(--accent-border)"
-                          : "1px solid #333",
+                          ? "1px solid #16a34a"
+                          : "1px solid #7f1d1d",
                         color: showCursorOnOverlay
-                          ? "var(--accent-text)"
-                          : "#b6beca",
+                          ? "#bbf7d0"
+                          : "#fecaca",
                       }}
                     >
-                      <span>Show my cursor on overlay</span>
-                      <span>{showCursorOnOverlay ? "On" : "Off"}</span>
+                      <span>Overlay cursor</span>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: "50%",
+                            background: showCursorOnOverlay ? "#22c55e" : "#ef4444",
+                            boxShadow: showCursorOnOverlay
+                              ? "0 0 7px rgba(34,197,94,.7)"
+                              : "none",
+                          }}
+                        />
+                        {showCursorOnOverlay ? "Visible" : "Hidden"}
+                      </span>
                     </button>
                     <button
                       className="ui-button ui-danger"

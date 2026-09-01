@@ -38,6 +38,7 @@ export function registerSocketHandlers(
   activeUsers: Map<string, ActiveUser>,
   activeOverlays: Set<string>,
   onMediaEnded?: (id: string) => void,
+  onSoundEnded?: (playbackId: string) => void,
 ) {
   const user = (socket as any).jwtUser as AuthUser | undefined;
   const isOverlay = socket.handshake.query.mode === "overlay";
@@ -65,6 +66,10 @@ export function registerSocketHandlers(
       const element = canvasState.elements.find((candidate) => candidate.id === id);
       if (!element || element.type !== "video" || !element.autoVisibility) return;
       onMediaEnded?.(id);
+    });
+    socket.on("sound:ended", ({ playbackId }) => {
+      if (typeof playbackId !== "string" || playbackId.length > 100) return;
+      onSoundEnded?.(playbackId);
     });
   }
 
@@ -251,20 +256,31 @@ export function registerSocketHandlers(
 
 function validLabel(value: unknown, max: number): value is string { return typeof value === "string" && value.trim().length > 0 && value.length <= max; }
 function validUrl(value: unknown): value is string { if (typeof value !== "string" || value.length > 2048) return false; try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol); } catch { return false; } }
+const triggerActions = ["show-element", "show-temporary", "fly-across", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay"];
+const triggerPlacements = ["current", "random", "fit", "fill", "top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"];
+const flyDirections = ["left-to-right-top", "left-to-right-center", "left-to-right-bottom", "right-to-left-top", "right-to-left-center", "right-to-left-bottom", "top-to-bottom-left", "top-to-bottom-center", "top-to-bottom-right", "bottom-to-top-left", "bottom-to-top-center", "bottom-to-top-right"];
+function validTriggerStep(value: any): boolean {
+  const allowed = new Set(["action", "targetId", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds"]);
+  return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
+    && triggerActions.includes(value.action)
+    && (value.placement === undefined || triggerPlacements.includes(value.placement))
+    && (value.durationSeconds === undefined || (Number.isFinite(value.durationSeconds) && value.durationSeconds >= 1 && value.durationSeconds <= 3600))
+    && (value.flyDirection === undefined || flyDirections.includes(value.flyDirection))
+    && (value.timing === undefined || ["immediate", "delay", "after-previous"].includes(value.timing))
+    && (value.delaySeconds === undefined || (Number.isFinite(value.delaySeconds) && value.delaySeconds >= 0 && value.delaySeconds <= 3600))
+    && (value.action === "refresh-overlay" ? value.targetId === undefined : validLabel(value.targetId, 100));
+}
 function validTrigger(value: any): boolean {
-  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "flyDirection", "permission"]);
+  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds", "permission", "steps"]);
   return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
     && validLabel(value.id, 100) && validLabel(value.name, 60)
     && ["chat-command", "follow", "subscribe", "gift-subscribe", "raid", "bits", "channel-points"].includes(value.event)
-    && ["show-element", "show-temporary", "fly-across", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay"].includes(value.action)
+    && validTriggerStep({ action: value.action, targetId: value.targetId, placement: value.placement, durationSeconds: value.durationSeconds, flyDirection: value.flyDirection, timing: value.timing, delaySeconds: value.delaySeconds })
     && typeof value.enabled === "boolean" && Number.isFinite(value.cooldownSeconds) && value.cooldownSeconds >= 0 && value.cooldownSeconds <= 86400
     && (value.match === undefined || (typeof value.match === "string" && value.match.length <= 100))
     && (value.minimum === undefined || (Number.isFinite(value.minimum) && value.minimum >= 0 && value.minimum <= 10_000_000))
-    && (value.placement === undefined || ["current", "random", "fit", "fill", "top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"].includes(value.placement))
-    && (value.durationSeconds === undefined || (Number.isFinite(value.durationSeconds) && value.durationSeconds >= 1 && value.durationSeconds <= 3600))
-    && (value.flyDirection === undefined || ["left-to-right-top", "left-to-right-center", "left-to-right-bottom", "right-to-left-top", "right-to-left-center", "right-to-left-bottom", "top-to-bottom-left", "top-to-bottom-center", "top-to-bottom-right", "bottom-to-top-left", "bottom-to-top-center", "bottom-to-top-right"].includes(value.flyDirection))
     && (value.permission === undefined || ["everyone", "vip", "moderator", "streamer"].includes(value.permission))
-    && (value.action === "refresh-overlay" ? value.targetId === undefined : validLabel(value.targetId, 100));
+    && (value.steps === undefined || (Array.isArray(value.steps) && value.steps.length >= 2 && value.steps.length <= 10 && value.steps.every(validTriggerStep)));
 }
 
 function registerPresence(socket: AppSocket, user: AuthUser, activeUsers: Map<string, ActiveUser>) {

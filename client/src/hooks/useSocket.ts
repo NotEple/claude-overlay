@@ -95,18 +95,38 @@ export function useSocket({
   const activeSoundAudioRef = useRef<Set<HTMLAudioElement>>(new Set());
 
   const startSound = useCallback(
-    (item: SoundboardItem, mutedStart: boolean, reportError: boolean) => {
+    (
+      item: SoundboardItem & { playbackId?: string },
+      mutedStart: boolean,
+      reportError: boolean,
+    ) => {
       const audio = new Audio(item.url);
       activeSoundAudioRef.current.add(audio);
       audio.preload = "auto";
       audio.volume = item.volume;
       audio.muted = mutedStart;
       const cleanup = () => activeSoundAudioRef.current.delete(audio);
-      audio.addEventListener("ended", cleanup, { once: true });
+      let completionReported = false;
+      const reportPlaybackEnded = () => {
+        if (completionReported || mode !== "overlay" || !item.playbackId) return;
+        completionReported = true;
+        socketRef.current?.emit("sound:ended", {
+          playbackId: item.playbackId,
+        });
+      };
+      audio.addEventListener(
+        "ended",
+        () => {
+          cleanup();
+          reportPlaybackEnded();
+        },
+        { once: true },
+      );
       audio.addEventListener(
         "error",
         () => {
           cleanup();
+          reportPlaybackEnded();
           if (reportError)
             toast.error(
               `Could not load “${item.name}”. Check its URL or uploaded file.`,
@@ -121,6 +141,7 @@ export function useSocket({
         })
         .catch((error) => {
           cleanup();
+          reportPlaybackEnded();
           console.error("Soundboard playback failed:", error);
           if (reportError)
             toast.error(
@@ -128,7 +149,7 @@ export function useSocket({
             );
         });
     },
-    [toast],
+    [mode, toast],
   );
 
   useEffect(() => {

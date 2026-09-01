@@ -12,6 +12,7 @@ import type {
   CanvasElement,
   ChatPermission,
   FlyDirection,
+  TriggerStep,
   TriggerPlacement,
   ServerToClientEvents,
   ClientToServerEvents,
@@ -52,6 +53,30 @@ interface PresentationRestore {
 }
 
 const presentationRestores = new Map<string, PresentationRestore>();
+const mediaCompletionWaiters = new Map<string, Set<() => void>>();
+const soundCompletionWaiters = new Map<string, () => void>();
+
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+function waitForMediaEnd(id: string) {
+  return new Promise<void>((resolve) => {
+    const waiters = mediaCompletionWaiters.get(id) ?? new Set();
+    const finish = () => {
+      clearTimeout(fallback);
+      resolve();
+    };
+    const fallback = setTimeout(finish, 60 * 60 * 1000);
+    waiters.add(finish);
+    mediaCompletionWaiters.set(id, waiters);
+  });
+}
+
+function finishMedia(id: string) {
+  mediaCompletionWaiters.get(id)?.forEach((resolve) => resolve());
+  mediaCompletionWaiters.delete(id);
+  restorePresentation(id);
+}
 
 function restorePresentation(id: string) {
   const pending = presentationRestores.get(id);
@@ -93,12 +118,11 @@ function presentElement(
 
   const changes: Partial<CanvasElement> = { visible: true, dvdEnabled: false };
   if (placement === "random") {
-    const positions: TriggerPlacement[] = [
-      "top-left", "top-center", "top-right",
-      "center-left", "center", "center-right",
-      "bottom-left", "bottom-center", "bottom-right",
-    ];
-    placement = positions[Math.floor(Math.random() * positions.length)];
+    const width = pending.changes.width ?? element.width;
+    const height = pending.changes.height ?? element.height;
+    changes.x = STREAM_OFFSET_X + Math.random() * Math.max(0, STREAM_W - width);
+    changes.y = STREAM_OFFSET_Y + Math.random() * Math.max(0, STREAM_H - height);
+    changes.rotation = 0;
   }
   if (placement === "fit" || placement === "fill") {
     const originalWidth = pending.changes.width ?? element.width;
@@ -111,7 +135,7 @@ function presentElement(
     changes.x = STREAM_OFFSET_X + (STREAM_W - changes.width) / 2;
     changes.y = STREAM_OFFSET_Y + (STREAM_H - changes.height) / 2;
     changes.rotation = 0;
-  } else if (placement !== "current") {
+  } else if (placement !== "current" && placement !== "random") {
     const width = pending.changes.width ?? element.width;
     const height = pending.changes.height ?? element.height;
     const horizontal = placement.endsWith("left") ? "left" : placement.endsWith("right") ? "right" : "center";
@@ -133,6 +157,64 @@ function presentElement(
   Object.assign(element, changes);
   if (emitUpdate) io.emit("element:updated", { id: element.id, changes });
   return pending;
+}
+
+function executeTriggerStep(step: TriggerStep): Promise<void> {
+  if (step.action === 'refresh-overlay') { io.emit('overlay:refresh'); return Promise.resolve(); }
+  if (step.action === 'play-sound') {
+    const sound = canvasStore.sounds.find(item => item.id === step.targetId);
+    if (!sound) return Promise.resolve();
+    const playbackId = randomUUID();
+    io.to('overlay').emit('sound:play', { ...sound, playbackId });
+    return new Promise<void>((resolve) => {
+      const fallback = setTimeout(() => {
+        soundCompletionWaiters.delete(playbackId);
+        resolve();
+      }, 10 * 60 * 1000);
+      soundCompletionWaiters.set(playbackId, () => {
+        clearTimeout(fallback);
+        resolve();
+      });
+    });
+  }
+  const element = canvasStore.canvasState.elements.find(item => item.id === step.targetId);
+  if (!element) return Promise.resolve();
+  if (step.action === 'play-media') {
+    if (element.type !== 'video') return Promise.resolve();
+    presentElement(element, step.placement);
+    element.autoVisibility = true;
+    io.emit('element:updated', { id: element.id, changes: { autoVisibility: true } });
+    io.emit('media:control', { id: element.id, action: 'play', currentTime: 0 });
+    return waitForMediaEnd(element.id);
+  }
+  if (step.action === 'fly-across') {
+    if (!['image', 'gif', 'video'].includes(element.type)) return Promise.resolve();
+    flyElement(element, step.flyDirection, step.durationSeconds ?? 5);
+    return delay((step.durationSeconds ?? 5) * 1000);
+  }
+  if (step.action === 'show-temporary') {
+    if (!['image', 'gif'].includes(element.type)) return Promise.resolve();
+    const pending = presentElement(element, step.placement);
+    if (pending) pending.timer = setTimeout(() => restorePresentation(element.id), (step.durationSeconds ?? 5) * 1000);
+    return delay((step.durationSeconds ?? 5) * 1000);
+  }
+  const changes: Partial<CanvasElement> = {};
+  if (step.action === 'show-element') changes.visible = true;
+  if (step.action === 'hide-element') changes.visible = false;
+  if (step.action === 'toggle-element') changes.visible = !element.visible;
+  if (step.action === 'enable-dvd') Object.assign(changes, { dvdEnabled: true, dvdStartedAt: Date.now(), dvdStartX: element.x, dvdStartY: element.y, dvdVelocityX: 120 + Math.random() * 100, dvdVelocityY: (Math.random() > .5 ? 1 : -1) * (120 + Math.random() * 100) });
+  Object.assign(element, changes);
+  io.emit('element:updated', { id: element.id, changes });
+  return Promise.resolve();
+}
+
+async function executeTriggerSteps(steps: TriggerStep[]) {
+  let previousCompletion = Promise.resolve();
+  for (const step of steps) {
+    if (step.timing === "after-previous") await previousCompletion;
+    if (step.timing === "delay") await delay((step.delaySeconds ?? 1) * 1000);
+    previousCompletion = executeTriggerStep(step);
+  }
 }
 
 function flyElement(
@@ -233,7 +315,18 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) =>
-  registerSocketHandlers(io, socket, canvasStore, activeUsers, activeOverlays, restorePresentation),
+  registerSocketHandlers(
+    io,
+    socket,
+    canvasStore,
+    activeUsers,
+    activeOverlays,
+    finishMedia,
+    (playbackId) => {
+      soundCompletionWaiters.get(playbackId)?.();
+      soundCompletionWaiters.delete(playbackId);
+    },
+  ),
 );
 
 const triggerCooldowns = new Map<string, number>();
@@ -257,36 +350,8 @@ configureTwitchEvents((eventType, event) => {
     canvasStore.activity.unshift({ id: randomUUID(), at: new Date().toISOString(), user: 'Twitch', action: `ran trigger “${trigger.name}”` });
     canvasStore.activity = canvasStore.activity.slice(0, 50);
     io.to('dashboard').emit('studio:sync', { scenes: canvasStore.scenes, presets: canvasStore.presets, sounds: canvasStore.sounds, triggers: canvasStore.triggers, activity: canvasStore.activity, twitchConnected: canvasStore.twitchConnected });
-    const element = canvasStore.canvasState.elements.find(item => item.id === trigger.targetId);
-    if (trigger.action === 'refresh-overlay') { io.emit('overlay:refresh'); continue; }
-    if (trigger.action === 'play-sound') { const sound = canvasStore.sounds.find(item => item.id === trigger.targetId); if (sound) io.to('overlay').emit('sound:play', sound); continue; }
-    if (!element) continue;
-    if (trigger.action === 'play-media') {
-      if (element.type !== 'video') continue;
-      presentElement(element, trigger.placement);
-      element.autoVisibility = true;
-      io.emit('element:updated', { id: element.id, changes: { autoVisibility: true } });
-      io.emit('media:control', { id: element.id, action: 'play', currentTime: 0 });
-      continue;
-    }
-    if (trigger.action === 'fly-across') {
-      if (!['image', 'gif', 'video'].includes(element.type)) continue;
-      flyElement(element, trigger.flyDirection, trigger.durationSeconds ?? 5);
-      continue;
-    }
-    if (trigger.action === 'show-temporary') {
-      if (!['image', 'gif'].includes(element.type)) continue;
-      const pending = presentElement(element, trigger.placement);
-      if (pending) pending.timer = setTimeout(() => restorePresentation(element.id), (trigger.durationSeconds ?? 5) * 1000);
-      continue;
-    }
-    const changes: Partial<CanvasElement> = {};
-    if (trigger.action === 'show-element') changes.visible = true;
-    if (trigger.action === 'hide-element') changes.visible = false;
-    if (trigger.action === 'toggle-element') changes.visible = !element.visible;
-    if (trigger.action === 'enable-dvd') Object.assign(changes, { dvdEnabled: true, dvdStartedAt: Date.now(), dvdStartX: element.x, dvdStartY: element.y, dvdVelocityX: 120 + Math.random() * 100, dvdVelocityY: (Math.random() > .5 ? 1 : -1) * (120 + Math.random() * 100) });
-    Object.assign(element, changes);
-    io.emit('element:updated', { id: element.id, changes });
+    const steps = trigger.steps?.length ? trigger.steps : [trigger];
+    void executeTriggerSteps(steps);
   }
 }, connected => {
   canvasStore.twitchConnected = connected;

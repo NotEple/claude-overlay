@@ -11,7 +11,10 @@ const sections = [
       ],
       ["Alt + drag", "Temporarily disable edge and center snapping."],
       ["Drag a resize handle", "Resize from that edge or corner."],
-      ["Right-drag an element", "Rotate it around its center."],
+      [
+        "Drag the round rotation handle",
+        "Rotate the selected element around its center. Hold Shift to snap to 15° increments.",
+      ],
       ["Click an element", "Select it and show its editing controls."],
       [
         "Shift / Ctrl / Cmd + click",
@@ -77,6 +80,35 @@ const sections = [
       ],
       ["Refresh overlay", "Ask connected overlay browser sources to reload."],
       ["Studio", "Open scenes, presets, sounds, commands, and DVD effects."],
+    ],
+  },
+  {
+    title: "Commands & effects",
+    items: [
+      [
+        "Add another action",
+        "Chain up to 10 editable actions to one chat command, such as showing an image and playing a sound.",
+      ],
+      [
+        "Command action timing",
+        "Run actions together, after a chosen delay, or after the previous timed effect, video, or sound finishes.",
+      ],
+      [
+        "Random position",
+        "Place media at a fresh random point anywhere it fits inside the stream area.",
+      ],
+      [
+        "Preview flight",
+        "Test a fly-across animation on your dashboard without affecting OBS or other users.",
+      ],
+      [
+        "Effects · Preview",
+        "Listen to the selected DVD corner sound locally at its configured volume.",
+      ],
+      [
+        "Show my cursor on overlay",
+        "The green Visible or red Hidden state controls only your cursor on OBS; dashboard cursors remain visible.",
+      ],
     ],
   },
 ];
