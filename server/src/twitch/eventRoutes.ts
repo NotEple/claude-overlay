@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { Router } from "express";
 import { getUserFromRequest } from "../auth/routes.js";
-import { exchangeCodeForRedirect, getTwitchEventsAuthUrl, getTwitchUserFromToken } from "../auth/twitch.js";
+import { exchangeCodeForRedirect, getTwitchEventsAuthUrl, getTwitchUserFromToken, twitchEventsRedirectUri } from "../auth/twitch.js";
 import { deleteEventAuth, eventDatabaseConfigured, getEventAuth, saveEventAuth, type EventChannel } from "./eventAuthStore.js";
 import type { TriggerEventType } from "../types.js";
 import { registerEventSubscriptions } from "./eventWebhook.js";
@@ -20,7 +20,7 @@ function canManageEventChannel(req: Parameters<typeof getUserFromRequest>[0], ch
 }
 const sessionSecret = process.env.SESSION_SECRET ?? "development-only-secret";
 const clientUrl = process.env.CLIENT_URL ?? "http://localhost:5173";
-const redirectUri = process.env.TWITCH_EVENTS_REDIRECT_URI ?? "http://localhost:3001/auth/events/callback";
+const redirectUri = twitchEventsRedirectUri;
 export const EVENT_SCOPES = ["user:read:chat", "user:write:chat", "moderator:read:followers", "channel:read:subscriptions", "bits:read", "channel:read:redemptions", "channel:read:hype_train"];
 
 function createState(channel: EventChannel) {

@@ -1,6 +1,15 @@
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID!;
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET!;
-const TWITCH_REDIRECT_URI = process.env.TWITCH_REDIRECT_URI!;
+const SERVER_URL = (
+  process.env.PUBLIC_SERVER_URL ??
+  process.env.RENDER_EXTERNAL_URL ??
+  "http://localhost:3001"
+).replace(/\/$/, "");
+const TWITCH_REDIRECT_URI =
+  process.env.TWITCH_REDIRECT_URI || `${SERVER_URL}/auth/callback`;
+export const twitchEventsRedirectUri =
+  process.env.TWITCH_EVENTS_REDIRECT_URI ||
+  `${SERVER_URL}/auth/events/callback`;
 
 export interface TwitchUser {
   id: string;
@@ -30,7 +39,7 @@ export function getTwitchAuthUrl(state: string): string {
 export function getTwitchEventsAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: TWITCH_CLIENT_ID,
-    redirect_uri: process.env.TWITCH_EVENTS_REDIRECT_URI!,
+    redirect_uri: twitchEventsRedirectUri,
     response_type: "code",
     scope: "user:read:chat user:write:chat moderator:read:followers channel:read:subscriptions bits:read channel:read:redemptions channel:read:hype_train",
     state,
