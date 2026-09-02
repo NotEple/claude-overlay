@@ -22,7 +22,6 @@
   "scenes": [],
   "presets": [],
   "sounds": [],
-  "triggers": [],
   "chatEmoteSettings": {
     "enabled": false,
     "showNames": true,
@@ -35,8 +34,6 @@
     "speed": 240,
     "lifetimeSeconds": 20,
     "maxVisible": 10,
-    "blacklist": [
-      "gekkerbot"
-    ]
+    "blacklist": ["gekkerbot"]
   }
 }

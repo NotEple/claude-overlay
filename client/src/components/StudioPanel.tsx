@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AudioLines,
   Headphones,
@@ -8,9 +8,10 @@ import {
   Plus,
   Radio,
   Save,
-  Sparkles,
   Trash2,
   X,
+  BellRing,
+  Link2,
 } from "lucide-react";
 import type {
   CanvasElement,
@@ -21,6 +22,7 @@ import type {
   FlyDirection,
   ChatPermission,
   TriggerStep,
+  TriggerEventType,
   ChatEmoteSettings,
   ChatEmoteSpawn,
 } from "../types";
@@ -33,7 +35,14 @@ import previewEmote from "../assets/vicksyW.png";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 
-type Tab = "scenes" | "presets" | "sounds" | "triggers" | "emotes" | "effects";
+type Tab =
+  | "scenes"
+  | "presets"
+  | "sounds"
+  | "triggers"
+  | "events"
+  | "emotes"
+  | "effects";
 
 interface StudioPanelProps {
   studio: StudioState;
@@ -58,7 +67,11 @@ interface StudioPanelProps {
   onPlaySound: (id: string) => void;
   onSaveTrigger: (trigger: OverlayTrigger) => void;
   onDeleteTrigger: (id: string) => void;
-  onPreviewFly: (id: string, direction: FlyDirection, durationSeconds: number) => boolean;
+  onPreviewFly: (
+    id: string,
+    direction: FlyDirection,
+    durationSeconds: number,
+  ) => boolean;
   dvdCelebrationSettings: DvdCelebrationSettings;
   dvdSoundUploading: boolean;
   onDvdSettingsChange: (settings: DvdCelebrationSettings) => void;
@@ -68,10 +81,10 @@ interface StudioPanelProps {
 }
 
 const tabs: Array<[Tab, string, typeof Save]> = [
-  ["sounds", "Sounds", AudioLines],
+  ["sounds", "Soundboard", AudioLines],
   ["triggers", "Commands", Radio],
+  ["events", "Events", BellRing],
   ["emotes", "Emotes", MessageCircle],
-  ["effects", "Effects", Sparkles],
 ];
 
 const fieldStyle = {
@@ -95,10 +108,11 @@ const triggerActionOptions: Array<{
   { value: "fly-across", label: "Fly across stream" },
   { value: "hide-element", label: "Hide element" },
   { value: "toggle-element", label: "Toggle element visibility" },
-  { value: "play-media", label: "Play video, then hide" },
-  { value: "play-sound", label: "Play sound on overlay" },
+  { value: "play-media", label: "Play video/audio layer, then hide" },
+  { value: "play-sound", label: "Play Soundboard clip" },
   { value: "enable-dvd", label: "Start DVD movement" },
   { value: "refresh-overlay", label: "Refresh OBS overlay" },
+  { value: "send-chat", label: "Send Twitch chat message" },
 ];
 
 const triggerActionLabel = (action: OverlayTrigger["action"]) =>
@@ -127,25 +141,81 @@ export function StudioPanel(props: StudioPanelProps) {
   const [soundUrl, setSoundUrl] = useState("");
   const [triggerAction, setTriggerAction] =
     useState<OverlayTrigger["action"]>("show-element");
-  const [triggerMatch, setTriggerMatch] = useState("<");
+  const [triggerMatch, setTriggerMatch] = useState("");
+  const [triggerEvent, setTriggerEvent] =
+    useState<Exclude<TriggerEventType, "chat-command">>("follow");
+  const [triggerMinimum, setTriggerMinimum] = useState(1);
+  const [triggerChannel, setTriggerChannel] = useState("");
+  const [chatMessage, setChatMessage] = useState("");
   const [targetId, setTargetId] = useState("");
   const [cooldown, setCooldown] = useState(5);
   const [triggerPlacement, setTriggerPlacement] =
     useState<TriggerPlacement>("current");
-  const [flyDirection, setFlyDirection] =
-    useState<FlyDirection>("left-to-right-bottom");
+  const [flyDirection, setFlyDirection] = useState<FlyDirection>(
+    "left-to-right-bottom",
+  );
   const [duration, setDuration] = useState(5);
   const [permission, setPermission] = useState<ChatPermission>("everyone");
   const [editingTriggerId, setEditingTriggerId] = useState<string | null>(null);
   const [chainedSteps, setChainedSteps] = useState<TriggerStep[]>([]);
-  const [editingChainIndex, setEditingChainIndex] = useState<number | null>(null);
-  const [stepTiming, setStepTiming] = useState<NonNullable<TriggerStep["timing"]>>("immediate");
+  const [editingChainIndex, setEditingChainIndex] = useState<number | null>(
+    null,
+  );
+  const [stepTiming, setStepTiming] =
+    useState<NonNullable<TriggerStep["timing"]>>("immediate");
   const [stepDelay, setStepDelay] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [emotePreview, setEmotePreview] = useState<ChatEmoteSpawn | null>(null);
   const [blacklistName, setBlacklistName] = useState("");
   const dvdPreviewAudio = useRef<HTMLAudioElement | null>(null);
   const pendingStepBeforeChainEdit = useRef<TriggerStep | null>(null);
+  const [eventStatus, setEventStatus] = useState<{
+    configured: boolean;
+    channels: Array<{
+      channel: string;
+      connected: boolean;
+      displayName?: string;
+      scopes: string[];
+    }>;
+  } | null>(null);
+  const loadEventStatus = async (showError = false) => {
+    try {
+      const response = await fetch(`${SERVER_URL}/events/status`, {
+        headers: authHeaders(),
+      });
+      if (!response.ok) throw new Error("Could not load Twitch Events status");
+      setEventStatus(await response.json());
+    } catch {
+      if (showError) toast.error("Could not refresh Twitch Events status");
+    }
+  };
+  useEffect(() => {
+    if (tab !== "events") return;
+    void loadEventStatus(true);
+    const refresh = () => void loadEventStatus();
+    const interval = window.setInterval(refresh, 5_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [tab]);
+
+  const connectEvents = async (channel: string) => {
+    try {
+      const response = await fetch(`${SERVER_URL}/auth/events/start/${channel}`, {
+        headers: authHeaders(),
+      });
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url)
+        return toast.error(data.error ?? "Could not start Twitch authorization");
+      window.location.href = data.url;
+    } catch {
+      toast.error("Could not reach the server to start Twitch authorization");
+    }
+  };
 
   const currentTriggerStep = (): TriggerStep => ({
     action: triggerAction,
@@ -159,6 +229,7 @@ export function StudioPanel(props: StudioPanelProps) {
     flyDirection: triggerAction === "fly-across" ? flyDirection : undefined,
     timing: stepTiming,
     delaySeconds: stepTiming === "delay" ? stepDelay : undefined,
+    chatMessage: triggerAction === "send-chat" ? chatMessage.trim() : undefined,
   });
 
   const resetTriggerStep = () => {
@@ -169,6 +240,7 @@ export function StudioPanel(props: StudioPanelProps) {
     setDuration(5);
     setStepTiming("immediate");
     setStepDelay(1);
+    setChatMessage("");
     setEditingChainIndex(null);
   };
 
@@ -180,11 +252,12 @@ export function StudioPanel(props: StudioPanelProps) {
     setDuration(step.durationSeconds ?? 5);
     setStepTiming(step.timing ?? "immediate");
     setStepDelay(step.delaySeconds ?? 1);
+    setChatMessage(step.chatMessage ?? "");
   };
 
   const resetTriggerForm = () => {
     setName("");
-    setTriggerMatch("<");
+    setTriggerMatch("");
     setCooldown(5);
     setPermission("everyone");
     setChainedSteps([]);
@@ -207,17 +280,42 @@ export function StudioPanel(props: StudioPanelProps) {
       setName("");
     }
   };
-  const createSound = () => {
-    if (name.trim() && soundUrl.trim()) {
-      props.onSaveSound({
-        id: randomUUID(),
-        name: name.trim(),
-        url: soundUrl.trim(),
-        volume: 0.25,
-      });
-      toast.success(`Sound “${name.trim()}” added`);
-      setName("");
-      setSoundUrl("");
+  const createSound = async () => {
+    if (soundUrl.trim()) {
+      try {
+        setUploading(true);
+        const response = await fetch(`${SERVER_URL}/myinstants/resolve`, {
+          method: "POST",
+          credentials: "include",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ url: soundUrl.trim() }),
+        });
+        const data = (await response.json()) as {
+          url?: string;
+          title?: string;
+          error?: string;
+        };
+        if (!response.ok || !data.url)
+          throw new Error(data.error ?? "Could not resolve Myinstants link");
+        const soundName = name.trim() || data.title || "Myinstants sound";
+        props.onSaveSound({
+          id: randomUUID(),
+          name: soundName,
+          url: data.url,
+          volume: 0.25,
+        });
+        toast.success(`Sound “${soundName}” added`);
+        setName("");
+        setSoundUrl("");
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not add Myinstants sound",
+        );
+      } finally {
+        setUploading(false);
+      }
     }
   };
   const uploadSound = async (file?: File) => {
@@ -232,7 +330,14 @@ export function StudioPanel(props: StudioPanelProps) {
         headers: authHeaders(),
         credentials: "include",
       });
-      if (!response.ok) throw new Error(String(response.status));
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(
+          data.error ?? `Sound upload failed (${response.status})`,
+        );
+      }
       const data = (await response.json()) as { url: string };
       props.onSaveSound({
         id: randomUUID(),
@@ -243,8 +348,10 @@ export function StudioPanel(props: StudioPanelProps) {
       setName("");
       setSoundUrl("");
       toast.success(`${file.name} added to the soundboard`);
-    } catch {
-      toast.error("Sound upload failed. Use MP3, WAV, OGG, or WebM audio.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Sound upload failed",
+      );
     } finally {
       setUploading(false);
     }
@@ -254,7 +361,12 @@ export function StudioPanel(props: StudioPanelProps) {
       toast.error("Finish updating the command action first");
       return;
     }
-    if (!name.trim() || (triggerAction !== "refresh-overlay" && !targetId))
+    if (
+      !name.trim() ||
+      (!["refresh-overlay", "send-chat"].includes(triggerAction) &&
+        !targetId) ||
+      (triggerAction === "send-chat" && !chatMessage.trim())
+    )
       return;
     const steps = [...chainedSteps, currentTriggerStep()];
     props.onSaveTrigger({
@@ -265,15 +377,26 @@ export function StudioPanel(props: StudioPanelProps) {
             (trigger) => trigger.id === editingTriggerId,
           )?.enabled ?? true)
         : true,
-      event: "chat-command",
-      match: triggerMatch.trim() || undefined,
+      event: tab === "events" ? triggerEvent : "chat-command",
+      match:
+        tab === "events" && triggerEvent !== "channel-points"
+          ? undefined
+          : triggerMatch.trim() || undefined,
+      minimum:
+        tab === "events" &&
+        ["subscribe", "gift-subscribe", "raid", "bits"].includes(triggerEvent)
+          ? triggerMinimum
+          : undefined,
+      channel: tab === "events" ? triggerChannel || undefined : undefined,
       ...steps[0],
       cooldownSeconds: cooldown,
       permission,
       steps: steps.length > 1 ? steps : undefined,
     });
     toast.success(
-      editingTriggerId ? "Chat command updated" : "Chat command added",
+      editingTriggerId
+        ? `${tab === "events" ? "Event trigger" : "Chat command"} updated`
+        : `${tab === "events" ? "Event trigger" : "Chat command"} added`,
     );
     resetTriggerForm();
   };
@@ -284,6 +407,9 @@ export function StudioPanel(props: StudioPanelProps) {
     setEditingTriggerId(trigger.id);
     setName(trigger.name);
     setTriggerMatch(trigger.match ?? "");
+    if (trigger.event !== "chat-command") setTriggerEvent(trigger.event);
+    setTriggerMinimum(trigger.minimum ?? 1);
+    setTriggerChannel(trigger.channel ?? "");
     const steps = trigger.steps?.length ? trigger.steps : [trigger];
     const current = steps.at(-1)!;
     setChainedSteps(steps.slice(0, -1));
@@ -298,8 +424,16 @@ export function StudioPanel(props: StudioPanelProps) {
   };
 
   const addChainedStep = () => {
-    if (triggerAction !== "refresh-overlay" && !targetId) {
-      toast.error("Choose a target before adding this action");
+    if (
+      (!["refresh-overlay", "send-chat"].includes(triggerAction) &&
+        !targetId) ||
+      (triggerAction === "send-chat" && !chatMessage.trim())
+    ) {
+      toast.error(
+        triggerAction === "send-chat"
+          ? "Enter a chat message before adding this action"
+          : "Choose a target before adding this action",
+      );
       return;
     }
     if (chainedSteps.length >= 9 && editingChainIndex === null) {
@@ -435,7 +569,9 @@ export function StudioPanel(props: StudioPanelProps) {
                 }}
                 primary="Load"
                 onDelete={() => {
-                  if (window.confirm(`Delete the saved scene “${item.name}”?`)) {
+                  if (
+                    window.confirm(`Delete the saved scene “${item.name}”?`)
+                  ) {
                     props.onDeleteScene(item.id);
                     toast.success(`Scene “${item.name}” deleted`);
                   }
@@ -482,21 +618,22 @@ export function StudioPanel(props: StudioPanelProps) {
         {tab === "sounds" && (
           <Section
             title="Soundboard"
-            description="Play saved sounds directly through the OBS overlay."
+            description="Soundboard clips play directly through OBS without creating or showing a canvas layer."
           >
             <input
               style={fieldStyle}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Sound name"
+              placeholder="Sound name (optional for Myinstants)"
               maxLength={60}
             />
             <input
               style={fieldStyle}
               value={soundUrl}
               onChange={(e) => setSoundUrl(e.target.value)}
-              placeholder="Direct HTTPS audio URL"
+              placeholder="Paste a Myinstants sound-page link"
               maxLength={2048}
+              title="Paste the normal Myinstants button-page URL or a direct Myinstants MP3 link"
             />
             <div
               style={{
@@ -507,9 +644,10 @@ export function StudioPanel(props: StudioPanelProps) {
             >
               <button
                 className="ui-button studio-primary"
-                onClick={createSound}
+                onClick={() => void createSound()}
+                disabled={uploading || !soundUrl.trim()}
               >
-                <Plus size={14} /> Add URL
+                <Plus size={14} /> Add Myinstants
               </button>
               <label
                 className="ui-button"
@@ -599,28 +737,107 @@ export function StudioPanel(props: StudioPanelProps) {
             ))}
           </Section>
         )}
-        {tab === "triggers" && (
+        {(tab === "triggers" || tab === "events") && (
           <Section
-            title="Chat commands"
+            title={tab === "events" ? "Event actions" : "Chat commands"}
             description={
-              props.studio.twitchConnected
-                ? "Anonymous Twitch chat listener connected."
-                : "Connecting to public Twitch chat automatically…"
+              tab === "events"
+                ? "Run media, sound, chat, and chained actions when Twitch events arrive."
+                : props.studio.twitchConnected
+                  ? "Anonymous Twitch chat listener connected."
+                  : "Connecting to public Twitch chat automatically…"
             }
           >
             <input
               style={fieldStyle}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Command name"
+              placeholder={
+                tab === "events" ? "Event action name" : "Command name"
+              }
               maxLength={60}
             />
-            <input
-              style={fieldStyle}
-              value={triggerMatch}
-              onChange={(e) => setTriggerMatch(e.target.value)}
-              placeholder="Chat command, for example <fox"
-            />
+            {tab === "events" && (
+              <>
+                <select
+                  style={fieldStyle}
+                  value={triggerEvent}
+                  onChange={(e) =>
+                    setTriggerEvent(
+                      e.target.value as Exclude<
+                        TriggerEventType,
+                        "chat-command"
+                      >,
+                    )
+                  }
+                  title="Choose the Twitch event that starts this action"
+                >
+                  <option value="follow">New follow</option>
+                  <option value="subscribe">
+                    Subscription or resubscription
+                  </option>
+                  <option value="gift-subscribe">Gift subscriptions</option>
+                  <option value="raid">Incoming raid</option>
+                  <option value="bits">Bits cheered</option>
+                  <option value="channel-points">
+                    Channel point redemption
+                  </option>
+                </select>
+                <select
+                  style={fieldStyle}
+                  value={triggerChannel}
+                  onChange={(e) => setTriggerChannel(e.target.value)}
+                  title="Limit this trigger to one connected broadcaster"
+                >
+                  <option value="">Any connected channel</option>
+                  {(eventStatus?.channels ?? []).map((item) => (
+                    <option key={item.channel} value={item.channel}>
+                      {item.displayName ?? item.channel}
+                    </option>
+                  ))}
+                </select>
+                {triggerEvent === "channel-points" && (
+                  <input
+                    style={fieldStyle}
+                    value={triggerMatch}
+                    onChange={(e) => setTriggerMatch(e.target.value)}
+                    placeholder="Reward title (leave empty for any reward)"
+                  />
+                )}
+                {["subscribe", "gift-subscribe", "raid", "bits"].includes(
+                  triggerEvent,
+                ) && (
+                  <label className="command-timing">
+                    <span>
+                      {triggerEvent === "subscribe"
+                        ? "Minimum months"
+                        : triggerEvent === "gift-subscribe"
+                          ? "Minimum gifts"
+                          : triggerEvent === "raid"
+                            ? "Minimum raiders"
+                            : "Minimum Bits"}
+                    </span>
+                    <input
+                      style={fieldStyle}
+                      type="number"
+                      min="1"
+                      value={triggerMinimum}
+                      onChange={(e) =>
+                        setTriggerMinimum(Math.max(1, Number(e.target.value)))
+                      }
+                    />
+                  </label>
+                )}
+              </>
+            )}
+            {tab === "triggers" && (
+              <input
+                style={fieldStyle}
+                value={triggerMatch}
+                onChange={(e) => setTriggerMatch(e.target.value)}
+                placeholder="Chat command, for example <fox"
+              />
+            )}
             <select
               style={fieldStyle}
               value={triggerAction}
@@ -635,7 +852,7 @@ export function StudioPanel(props: StudioPanelProps) {
                 </option>
               ))}
             </select>
-            {triggerAction !== "refresh-overlay" && (
+            {!["refresh-overlay", "send-chat"].includes(triggerAction) && (
               <select
                 style={fieldStyle}
                 value={targetId}
@@ -646,7 +863,8 @@ export function StudioPanel(props: StudioPanelProps) {
                   ? props.studio.sounds
                   : triggerAction === "play-media"
                     ? props.elements.filter(
-                        (element) => element.type === "video",
+                        (element) =>
+                          element.type === "video" || element.type === "audio",
                       )
                     : ["show-temporary", "fly-across"].includes(triggerAction)
                       ? props.elements.filter((element) =>
@@ -659,10 +877,46 @@ export function StudioPanel(props: StudioPanelProps) {
                       ? item.name
                       : item.type === "text"
                         ? `Text · ${item.id.slice(0, 6)}`
-                        : `${getFileLabel(item.src) || item.type} · ${item.type}`}
+                        : `${item.displayName || getFileLabel(item.src) || item.type} · ${item.type}`}
                   </option>
                 ))}
               </select>
+            )}
+            {triggerAction === "send-chat" && (
+              <div className="chat-message-editor">
+                <label>
+                  <span>Chat message</span>
+                  <textarea
+                    style={{
+                      ...fieldStyle,
+                      height: 72,
+                      paddingTop: 8,
+                      resize: "vertical",
+                    }}
+                    maxLength={500}
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    placeholder="Thanks {user} for the {bits} Bits!"
+                    title="Message sent by the connected broadcaster account. Event variables in braces are replaced automatically."
+                  />
+                </label>
+                <div
+                  className="chat-variable-guide"
+                  aria-label="Available chat message variables"
+                >
+                  <strong>Variables</strong>
+                  <code title="Viewer or broadcaster who caused the event">
+                    {"{user}"}
+                  </code>
+                  <code title="Total subscription months">{"{months}"}</code>
+                  <code title="Number of incoming raid viewers">
+                    {"{viewers}"}
+                  </code>
+                  <code title="Number of Bits cheered">{"{bits}"}</code>
+                  <code title="Channel point reward title">{"{reward}"}</code>
+                  <code title="Channel receiving the event">{"{channel}"}</code>
+                </div>
+              </div>
             )}
             {["play-media", "show-temporary"].includes(triggerAction) && (
               <label
@@ -719,17 +973,37 @@ export function StudioPanel(props: StudioPanelProps) {
                   }
                 >
                   <option value="left-to-right-top">Left → right · top</option>
-                  <option value="left-to-right-center">Left → right · center</option>
-                  <option value="left-to-right-bottom">Left → right · bottom</option>
+                  <option value="left-to-right-center">
+                    Left → right · center
+                  </option>
+                  <option value="left-to-right-bottom">
+                    Left → right · bottom
+                  </option>
                   <option value="right-to-left-top">Right → left · top</option>
-                  <option value="right-to-left-center">Right → left · center</option>
-                  <option value="right-to-left-bottom">Right → left · bottom</option>
-                  <option value="top-to-bottom-left">Top → bottom · left</option>
-                  <option value="top-to-bottom-center">Top → bottom · center</option>
-                  <option value="top-to-bottom-right">Top → bottom · right</option>
-                  <option value="bottom-to-top-left">Bottom → top · left</option>
-                  <option value="bottom-to-top-center">Bottom → top · center</option>
-                  <option value="bottom-to-top-right">Bottom → top · right</option>
+                  <option value="right-to-left-center">
+                    Right → left · center
+                  </option>
+                  <option value="right-to-left-bottom">
+                    Right → left · bottom
+                  </option>
+                  <option value="top-to-bottom-left">
+                    Top → bottom · left
+                  </option>
+                  <option value="top-to-bottom-center">
+                    Top → bottom · center
+                  </option>
+                  <option value="top-to-bottom-right">
+                    Top → bottom · right
+                  </option>
+                  <option value="bottom-to-top-left">
+                    Bottom → top · left
+                  </option>
+                  <option value="bottom-to-top-center">
+                    Bottom → top · center
+                  </option>
+                  <option value="bottom-to-top-right">
+                    Bottom → top · right
+                  </option>
                 </select>
               </label>
             )}
@@ -767,7 +1041,10 @@ export function StudioPanel(props: StudioPanelProps) {
                 className="ui-button ui-button--compact"
                 disabled={!targetId}
                 onClick={() => {
-                  if (!targetId || !props.onPreviewFly(targetId, flyDirection, duration)) {
+                  if (
+                    !targetId ||
+                    !props.onPreviewFly(targetId, flyDirection, duration)
+                  ) {
                     toast.error("Choose an available media element to preview");
                     return;
                   }
@@ -800,7 +1077,9 @@ export function StudioPanel(props: StudioPanelProps) {
                 >
                   <option value="immediate">At the same time</option>
                   <option value="delay">After a delay</option>
-                  <option value="after-previous">After previous finishes</option>
+                  <option value="after-previous">
+                    After previous finishes
+                  </option>
                 </select>
               </label>
             )}
@@ -826,9 +1105,13 @@ export function StudioPanel(props: StudioPanelProps) {
               <div className="command-chain" aria-label="Command action chain">
                 <strong>Action chain</strong>
                 {chainedSteps.map((step, index) => (
-                  <div className="command-chain__step" key={`${index}-${step.action}`}>
+                  <div
+                    className="command-chain__step"
+                    key={`${index}-${step.action}`}
+                  >
                     <span>
-                      {index + 1}. {triggerActionLabel(step.action)} · {triggerTimingLabel(step, index)}
+                      {index + 1}. {triggerActionLabel(step.action)} ·{" "}
+                      {triggerTimingLabel(step, index)}
                     </span>
                     <div className="command-chain__actions">
                       <button
@@ -848,13 +1131,13 @@ export function StudioPanel(props: StudioPanelProps) {
                             steps.filter((_, stepIndex) => stepIndex !== index),
                           );
                           if (editingChainIndex === index) {
-                            const pendingStep = pendingStepBeforeChainEdit.current;
+                            const pendingStep =
+                              pendingStepBeforeChainEdit.current;
                             pendingStepBeforeChainEdit.current = null;
                             if (pendingStep) loadTriggerStep(pendingStep);
                             else resetTriggerStep();
                             setEditingChainIndex(null);
-                          }
-                          else if (
+                          } else if (
                             editingChainIndex !== null &&
                             editingChainIndex > index
                           )
@@ -882,37 +1165,47 @@ export function StudioPanel(props: StudioPanelProps) {
               onClick={addChainedStep}
               disabled={
                 (chainedSteps.length >= 9 && editingChainIndex === null) ||
-                (triggerAction !== "refresh-overlay" && !targetId)
+                (!["refresh-overlay", "send-chat"].includes(triggerAction) &&
+                  !targetId) ||
+                (triggerAction === "send-chat" && !chatMessage.trim())
               }
               title="Keep this action and configure another action for the same chat command"
             >
-              {editingChainIndex !== null ? <Save size={13} /> : <Plus size={13} />}
-              {editingChainIndex !== null ? "Update action" : "Add another action"}
+              {editingChainIndex !== null ? (
+                <Save size={13} />
+              ) : (
+                <Plus size={13} />
+              )}
+              {editingChainIndex !== null
+                ? "Update action"
+                : "Add another action"}
             </button>
-            <label
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 150px",
-                alignItems: "center",
-                gap: 8,
-                color: "#aab2bf",
-                fontSize: 11,
-              }}
-            >
-              Who can use it
-              <select
-                style={fieldStyle}
-                value={permission}
-                onChange={(event) =>
-                  setPermission(event.target.value as ChatPermission)
-                }
+            {tab === "triggers" && (
+              <label
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 150px",
+                  alignItems: "center",
+                  gap: 8,
+                  color: "#aab2bf",
+                  fontSize: 11,
+                }}
               >
-                <option value="everyone">Everyone</option>
-                <option value="vip">VIPs, moderators & streamer</option>
-                <option value="moderator">Moderators & streamer</option>
-                <option value="streamer">Streamer only</option>
-              </select>
-            </label>
+                Who can use it
+                <select
+                  style={fieldStyle}
+                  value={permission}
+                  onChange={(event) =>
+                    setPermission(event.target.value as ChatPermission)
+                  }
+                >
+                  <option value="everyone">Everyone</option>
+                  <option value="vip">VIPs, moderators & streamer</option>
+                  <option value="moderator">Moderators & streamer</option>
+                  <option value="streamer">Streamer only</option>
+                </select>
+              </label>
+            )}
             <label
               style={{
                 display: "grid",
@@ -941,11 +1234,17 @@ export function StudioPanel(props: StudioPanelProps) {
               disabled={
                 !name.trim() ||
                 editingChainIndex !== null ||
-                (triggerAction !== "refresh-overlay" && !targetId)
+                (!["refresh-overlay", "send-chat"].includes(triggerAction) &&
+                  !targetId) ||
+                (triggerAction === "send-chat" && !chatMessage.trim())
               }
             >
               {editingTriggerId ? <Save size={14} /> : <Plus size={14} />}{" "}
-              {editingTriggerId ? "Save changes" : "Add command"}
+              {editingTriggerId
+                ? "Save changes"
+                : tab === "events"
+                  ? "Add event action"
+                  : "Add command"}
             </button>
             {editingTriggerId && (
               <button
@@ -962,12 +1261,16 @@ export function StudioPanel(props: StudioPanelProps) {
               </button>
             )}
             {props.studio.triggers
-              .filter((item) => item.event === "chat-command")
+              .filter((item) =>
+                tab === "events"
+                  ? item.event !== "chat-command"
+                  : item.event === "chat-command",
+              )
               .map((item) => (
                 <Item
                   key={item.id}
                   name={item.name}
-                  detail={`${item.match ?? "command"} → ${item.steps?.length ? `${item.steps.length} actions` : triggerActionLabel(item.action)} · ${item.permission ?? "everyone"}`}
+                  detail={`${item.event === "chat-command" ? (item.match ?? "command") : item.event} → ${item.steps?.length ? `${item.steps.length} actions` : triggerActionLabel(item.action)}${item.minimum ? ` · min ${item.minimum}` : ""}`}
                   onEdit={() => editTrigger(item)}
                   onPrimary={() => {
                     props.onSaveTrigger({ ...item, enabled: !item.enabled });
@@ -994,7 +1297,9 @@ export function StudioPanel(props: StudioPanelProps) {
               <div className="dvd-sound-status">
                 <div>
                   <span>Current sound</span>
-                  <strong title={props.dvdCelebrationSettings.soundUrl ?? undefined}>
+                  <strong
+                    title={props.dvdCelebrationSettings.soundUrl ?? undefined}
+                  >
                     {props.dvdCelebrationSettings.soundUrl
                       ? getFileLabel(props.dvdCelebrationSettings.soundUrl)
                       : "Built-in three-note chime"}
@@ -1119,6 +1424,143 @@ export function StudioPanel(props: StudioPanelProps) {
             </div>
           </Section>
         )}
+        {tab === "events" && (
+          <Section
+            title="Channel connections"
+            description="Connections stay at the bottom so event creation and saved actions remain within easy reach."
+          >
+            {!eventStatus?.configured && (
+              <div style={{ ...rowStyle, color: "#fca5a5" }}>
+                Event storage is unavailable. Check the server database
+                configuration.
+              </div>
+            )}
+            {(eventStatus?.channels ?? []).map((status) => {
+              const channel = status.channel;
+              const canWriteChat = status.scopes.includes("user:write:chat");
+              return (
+                <div
+                  key={channel}
+                  style={{ ...rowStyle, display: "grid", gap: 8 }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <strong style={{ textTransform: "capitalize" }}>
+                      {channel}
+                    </strong>
+                    <span
+                      style={{
+                        color: status?.connected ? "#86efac" : "#fca5a5",
+                        fontSize: 11,
+                      }}
+                    >
+                      {status?.connected
+                        ? `Connected as ${status.displayName}`
+                        : "Not connected"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      className="ui-button studio-primary"
+                      onClick={() => void connectEvents(channel)}
+                      title={`Authorize event access using the ${channel} Twitch account`}
+                    >
+                      <Link2 size={13} />{" "}
+                      {status?.connected && canWriteChat
+                        ? "Reconnect"
+                        : status?.connected
+                          ? "Reconnect for chat"
+                          : "Connect"}
+                    </button>
+                    {status?.connected && (
+                      <button
+                        className="ui-button ui-danger"
+                        onClick={async () => {
+                          if (
+                            !window.confirm(
+                              `Disconnect ${channel} event access?`,
+                            )
+                          )
+                            return;
+                          try {
+                            const response = await fetch(`${SERVER_URL}/events/${channel}`, {
+                              method: "DELETE",
+                              headers: authHeaders(),
+                            });
+                            if (!response.ok) throw new Error();
+                            toast.success(`${channel} event access disconnected`);
+                            void loadEventStatus();
+                          } catch {
+                            toast.error(`Could not disconnect ${channel} event access`);
+                          }
+                        }}
+                      >
+                        Disconnect
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ color: "#8f99a8", fontSize: 10 }}>
+                    Chat read/write, follows, subscriptions, Bits, channel
+                    points, and Hype Trains. Reconnect once if chat writing was
+                    added after the original authorization.
+                  </div>
+                  {status.connected && !canWriteChat && (
+                    <div style={{ color: "#fbbf24", fontSize: 11 }}>
+                      Chat messages are unavailable until this channel is
+                      reconnected and grants the new permission.
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {(
+                      [
+                        "follow",
+                        "subscribe",
+                        "gift-subscribe",
+                        "bits",
+                        "raid",
+                        "channel-points",
+                      ] as const
+                    ).map((type) => (
+                      <button
+                        key={type}
+                        className="ui-button ui-button--compact"
+                        disabled={!status?.connected}
+                        title={`Run a local simulated ${type} event`}
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(
+                              `${SERVER_URL}/events/${channel}/test`,
+                              {
+                                method: "POST",
+                                headers: {
+                                  ...authHeaders(),
+                                  "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({ type }),
+                              },
+                            );
+                            response.ok
+                              ? toast.success(`Simulated ${type} event sent`)
+                              : toast.error(`Could not simulate the ${type} event`);
+                          } catch {
+                            toast.error(`Could not reach the server to test the ${type} event`);
+                          }
+                        }}
+                      >
+                        Test {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </Section>
+        )}
         {tab === "emotes" && (
           <Section
             title="Chat emotes"
@@ -1134,19 +1576,25 @@ export function StudioPanel(props: StudioPanelProps) {
                   ...props.chatEmoteSettings,
                   enabled,
                 });
-                toast.success(`Chat emotes ${enabled ? "enabled" : "disabled"}`);
+                toast.success(
+                  `Chat emotes ${enabled ? "enabled" : "disabled"}`,
+                );
               }}
               title="Enable or disable automatic 7TV and Twitch emotes from the currently monitored chat"
               style={{
                 width: "100%",
                 justifyContent: "space-between",
                 border: `1px solid ${props.chatEmoteSettings.enabled ? "#16a34a" : "#7f1d1d"}`,
-                background: props.chatEmoteSettings.enabled ? "#052e16" : "#2a1717",
+                background: props.chatEmoteSettings.enabled
+                  ? "#052e16"
+                  : "#2a1717",
                 color: props.chatEmoteSettings.enabled ? "#bbf7d0" : "#fecaca",
               }}
             >
               <span>Chat emotes</span>
-              <span>{props.chatEmoteSettings.enabled ? "Enabled" : "Disabled"}</span>
+              <span>
+                {props.chatEmoteSettings.enabled ? "Enabled" : "Disabled"}
+              </span>
             </button>
             <div className="chat-emote-preview">
               <ChatEmoteLayer
@@ -1177,21 +1625,21 @@ export function StudioPanel(props: StudioPanelProps) {
             <div className="chat-emote-card">
               <strong className="chat-emote-card__title">Behavior</strong>
               <label className="chat-emote-setting">
-              <span>Show sender names</span>
-              <input
-                type="checkbox"
-                checked={props.chatEmoteSettings.showNames}
-                onChange={(event) => {
-                  props.onChatEmoteSettingsChange({
-                    ...props.chatEmoteSettings,
-                    showNames: event.target.checked,
-                  });
-                  toast.success(
-                    `Sender names ${event.target.checked ? "shown" : "hidden"}`,
-                  );
-                }}
-                title="Display the Twitch sender's name beneath each emote"
-              />
+                <span>Show sender names</span>
+                <input
+                  type="checkbox"
+                  checked={props.chatEmoteSettings.showNames}
+                  onChange={(event) => {
+                    props.onChatEmoteSettingsChange({
+                      ...props.chatEmoteSettings,
+                      showNames: event.target.checked,
+                    });
+                    toast.success(
+                      `Sender names ${event.target.checked ? "shown" : "hidden"}`,
+                    );
+                  }}
+                  title="Display the Twitch sender's name beneath each emote"
+                />
               </label>
               {props.chatEmoteSettings.showNames && (
                 <label className="chat-emote-setting">
@@ -1250,53 +1698,63 @@ export function StudioPanel(props: StudioPanelProps) {
                 </label>
               )}
               <label className="chat-emote-setting chat-emote-setting--motion">
-              <span>Movement</span>
-              <span
-                className="chat-emote-motion-toggle"
-                title="Choose gravity-based floor bounces or continuous wall-to-wall movement"
-              >
-                {(["floor", "walls"] as const).map((motion) => (
-                  <button
-                    key={motion}
-                    type="button"
-                    className={
-                      props.chatEmoteSettings.motion === motion ? "active" : ""
-                    }
-                    aria-pressed={props.chatEmoteSettings.motion === motion}
-                    onClick={() => {
-                      if (props.chatEmoteSettings.motion === motion) return;
-                      props.onChatEmoteSettingsChange({
-                        ...props.chatEmoteSettings,
-                        motion,
-                      });
-                      toast.success(
+                <span>Movement</span>
+                <span
+                  className="chat-emote-motion-toggle"
+                  title="Choose gravity-based floor bounces or continuous wall-to-wall movement"
+                >
+                  {(["floor", "walls"] as const).map((motion) => (
+                    <button
+                      key={motion}
+                      type="button"
+                      className={
+                        props.chatEmoteSettings.motion === motion
+                          ? "active"
+                          : ""
+                      }
+                      aria-pressed={props.chatEmoteSettings.motion === motion}
+                      onClick={() => {
+                        if (props.chatEmoteSettings.motion === motion) return;
+                        props.onChatEmoteSettingsChange({
+                          ...props.chatEmoteSettings,
+                          motion,
+                        });
+                        toast.success(
+                          motion === "floor"
+                            ? "Using floor bounce physics"
+                            : "Using wall-to-wall bounce",
+                        );
+                      }}
+                      title={
                         motion === "floor"
-                          ? "Using floor bounce physics"
-                          : "Using wall-to-wall bounce",
-                      );
-                    }}
-                    title={
-                      motion === "floor"
-                        ? "Use gravity and floor-impact physics"
-                        : "Bounce continuously between all screen edges"
-                    }
-                  >
-                    {motion === "floor" ? "Floor" : "Walls"}
-                  </button>
-                ))}
-              </span>
+                          ? "Use gravity and floor-impact physics"
+                          : "Bounce continuously between all screen edges"
+                      }
+                    >
+                      {motion === "floor" ? "Floor" : "Walls"}
+                    </button>
+                  ))}
+                </span>
               </label>
             </div>
             <div className="chat-emote-card">
-              <strong className="chat-emote-card__title">Motion & limits</strong>
-              {([
-                ["Emote size", "size", 24, 100, 2, "px"],
-                ["Movement speed", "speed", 40, 600, 10, " px/s"],
-                ["Gravity", "gravity", 100, 2400, 50, " px/s²"],
-                ["Lifetime", "lifetimeSeconds", 2, 120, 1, "s"],
-                ["Maximum visible", "maxVisible", 1, 100, 1, ""],
-              ] as const)
-                .filter(([, key]) => key !== "gravity" || props.chatEmoteSettings.motion === "floor")
+              <strong className="chat-emote-card__title">
+                Motion & limits
+              </strong>
+              {(
+                [
+                  ["Emote size", "size", 24, 100, 2, "px"],
+                  ["Movement speed", "speed", 40, 600, 10, " px/s"],
+                  ["Gravity", "gravity", 100, 2400, 50, " px/s²"],
+                  ["Lifetime", "lifetimeSeconds", 2, 120, 1, "s"],
+                  ["Maximum visible", "maxVisible", 1, 100, 1, ""],
+                ] as const
+              )
+                .filter(
+                  ([, key]) =>
+                    key !== "gravity" ||
+                    props.chatEmoteSettings.motion === "floor",
+                )
                 .map(([label, key, min, max, step, suffix]) => (
                   <label className="chat-emote-range" key={key}>
                     <span>{label}</span>
@@ -1314,14 +1772,20 @@ export function StudioPanel(props: StudioPanelProps) {
                       }
                       title={`Set ${label.toLowerCase()}`}
                     />
-                    <strong>{props.chatEmoteSettings[key]}{suffix}</strong>
+                    <strong>
+                      {props.chatEmoteSettings[key]}
+                      {suffix}
+                    </strong>
                   </label>
                 ))}
             </div>
             <div className="chat-emote-card">
-              <strong className="chat-emote-card__title">Blocked chatters</strong>
+              <strong className="chat-emote-card__title">
+                Blocked chatters
+              </strong>
               <span className="chat-emote-card__description">
-                These Twitch usernames cannot spawn chat emotes. Commands are unaffected.
+                These Twitch usernames cannot spawn chat emotes. Commands are
+                unaffected.
               </span>
               <div className="chat-emote-blacklist__add">
                 <input
@@ -1335,7 +1799,8 @@ export function StudioPanel(props: StudioPanelProps) {
                   onKeyDown={(event) => {
                     if (event.key !== "Enter") return;
                     event.preventDefault();
-                    event.currentTarget.nextElementSibling instanceof HTMLButtonElement &&
+                    event.currentTarget.nextElementSibling instanceof
+                      HTMLButtonElement &&
                       event.currentTarget.nextElementSibling.click();
                   }}
                   placeholder="username"
@@ -1356,7 +1821,10 @@ export function StudioPanel(props: StudioPanelProps) {
                     }
                     props.onChatEmoteSettingsChange({
                       ...props.chatEmoteSettings,
-                      blacklist: [...props.chatEmoteSettings.blacklist, blacklistName],
+                      blacklist: [
+                        ...props.chatEmoteSettings.blacklist,
+                        blacklistName,
+                      ],
                     });
                     toast.success(`@${blacklistName} blocked from chat emotes`);
                     setBlacklistName("");
@@ -1380,7 +1848,9 @@ export function StudioPanel(props: StudioPanelProps) {
                               (item) => item !== username,
                             ),
                           });
-                          toast.success(`@${username} removed from the blacklist`);
+                          toast.success(
+                            `@${username} removed from the blacklist`,
+                          );
                         }}
                         title={`Allow @${username} to spawn chat emotes again`}
                         aria-label={`Remove ${username} from blacklist`}
@@ -1391,11 +1861,15 @@ export function StudioPanel(props: StudioPanelProps) {
                   ))}
                 </div>
               ) : (
-                <span className="chat-emote-blacklist__empty">No blocked chatters</span>
+                <span className="chat-emote-blacklist__empty">
+                  No blocked chatters
+                </span>
               )}
             </div>
             <p className="chat-emote-note">
-              Both channel 7TV sets follow the active preview. Native Vicksy and Wixels Twitch emotes are recognized from chat in either channel. Images remain on their providers’ CDNs.
+              Both channel 7TV sets follow the active preview. Native Vicksy and
+              Wixels Twitch emotes are recognized from chat in either channel.
+              Images remain on their providers’ CDNs.
             </p>
           </Section>
         )}

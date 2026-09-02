@@ -66,7 +66,7 @@ export function registerSocketHandlers(
     socket.on("media:ended", ({ id }) => {
       if (typeof id !== "string" || id.length > 100) return;
       const element = canvasState.elements.find((candidate) => candidate.id === id);
-      if (!element || element.type !== "video" || !element.autoVisibility) return;
+      if (!element || !["video", "audio"].includes(element.type) || !element.autoVisibility) return;
       onMediaEnded?.(id);
     });
     socket.on("sound:ended", ({ playbackId }) => {
@@ -126,7 +126,10 @@ export function registerSocketHandlers(
     if (!element) return;
     if (element.locked && Object.keys(changes).some((key) => ["x", "y", "width", "height", "rotation", "scaleX", "scaleY", "dvdEnabled", "dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY"].includes(key))) return;
     record(`update:${id}`, `updated ${element.type}`);
-    if ("groupId" in changes && changes.groupId === null) delete element.groupId;
+    if ("groupId" in changes && changes.groupId === null) {
+      delete element.groupId;
+      delete element.groupName;
+    }
     Object.assign(element, changes);
     io.emit("element:updated", { id, changes });
   });
@@ -138,6 +141,19 @@ export function registerSocketHandlers(
     record(`remove:${id}`, `deleted ${element.type}`);
     canvasState.elements = canvasState.elements.filter((element) => element.id !== id);
     io.emit("element:removed", { id });
+    if (element.groupId) {
+      const remaining = canvasState.elements.filter(
+        (candidate) => candidate.groupId === element.groupId,
+      );
+      if (remaining.length === 1) {
+        delete remaining[0].groupId;
+        delete remaining[0].groupName;
+        io.emit("element:updated", {
+          id: remaining[0].id,
+          changes: { groupId: null },
+        });
+      }
+    }
   });
 
   socket.on("media:control", (payload) => {
@@ -268,7 +284,7 @@ export function registerSocketHandlers(
   });
   socket.on("preset:delete", async ({ id }) => { store.presets = store.presets.filter((item) => item.id !== id); await saveStudioData({ presets: store.presets }); syncStudio(); });
   socket.on("sound:save", async (item) => {
-    if (!validLabel(item?.id, 100) || !validLabel(item?.name, 60) || !validUrl(item?.url) || !Number.isFinite(item.volume) || item.volume < 0 || item.volume > 1) return;
+    if (!validLabel(item?.id, 100) || !validLabel(item?.name, 60) || !validSoundUrl(item?.url) || !Number.isFinite(item.volume) || item.volume < 0 || item.volume > 1) return;
     store.sounds = [...store.sounds.filter((sound) => sound.id !== item.id), item].slice(-100); await saveStudioData({ sounds: store.sounds }); syncStudio();
   });
   socket.on("sound:delete", async ({ id }) => { store.sounds = store.sounds.filter((item) => item.id !== id); await saveStudioData({ sounds: store.sounds }); syncStudio(); });
@@ -281,11 +297,19 @@ export function registerSocketHandlers(
 
 function validLabel(value: unknown, max: number): value is string { return typeof value === "string" && value.trim().length > 0 && value.length <= max; }
 function validUrl(value: unknown): value is string { if (typeof value !== "string" || value.length > 2048) return false; try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol); } catch { return false; } }
-const triggerActions = ["show-element", "show-temporary", "fly-across", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay"];
+function validSoundUrl(value: unknown): value is string {
+  if (!validUrl(value)) return false;
+  const url = new URL(value);
+  const serverOrigin = new URL(process.env.PUBLIC_SERVER_URL ?? "http://localhost:3001").origin;
+  const uploadedHere = url.origin === serverOrigin && url.pathname.startsWith("/files/");
+  const myInstants = url.protocol === "https:" && url.hostname === "www.myinstants.com" && /^\/media\/sounds\/[a-zA-Z0-9_.%-]+\.mp3$/i.test(url.pathname);
+  return uploadedHere || myInstants;
+}
+const triggerActions = ["show-element", "show-temporary", "fly-across", "hide-element", "toggle-element", "play-media", "play-sound", "enable-dvd", "refresh-overlay", "send-chat"];
 const triggerPlacements = ["current", "random", "fit", "fill", "top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"];
 const flyDirections = ["left-to-right-top", "left-to-right-center", "left-to-right-bottom", "right-to-left-top", "right-to-left-center", "right-to-left-bottom", "top-to-bottom-left", "top-to-bottom-center", "top-to-bottom-right", "bottom-to-top-left", "bottom-to-top-center", "bottom-to-top-right"];
 function validTriggerStep(value: any): boolean {
-  const allowed = new Set(["action", "targetId", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds"]);
+  const allowed = new Set(["action", "targetId", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds", "chatMessage"]);
   return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
     && triggerActions.includes(value.action)
     && (value.placement === undefined || triggerPlacements.includes(value.placement))
@@ -293,17 +317,19 @@ function validTriggerStep(value: any): boolean {
     && (value.flyDirection === undefined || flyDirections.includes(value.flyDirection))
     && (value.timing === undefined || ["immediate", "delay", "after-previous"].includes(value.timing))
     && (value.delaySeconds === undefined || (Number.isFinite(value.delaySeconds) && value.delaySeconds >= 0 && value.delaySeconds <= 3600))
-    && (value.action === "refresh-overlay" ? value.targetId === undefined : validLabel(value.targetId, 100));
+    && (value.chatMessage === undefined || (typeof value.chatMessage === "string" && value.chatMessage.trim().length > 0 && value.chatMessage.length <= 500))
+    && (["refresh-overlay", "send-chat"].includes(value.action) ? value.targetId === undefined : validLabel(value.targetId, 100));
 }
 function validTrigger(value: any): boolean {
-  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds", "permission", "steps"]);
+  const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "channel", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds", "chatMessage", "permission", "steps"]);
   return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
     && validLabel(value.id, 100) && validLabel(value.name, 60)
     && ["chat-command", "follow", "subscribe", "gift-subscribe", "raid", "bits", "channel-points"].includes(value.event)
-    && validTriggerStep({ action: value.action, targetId: value.targetId, placement: value.placement, durationSeconds: value.durationSeconds, flyDirection: value.flyDirection, timing: value.timing, delaySeconds: value.delaySeconds })
+    && validTriggerStep({ action: value.action, targetId: value.targetId, placement: value.placement, durationSeconds: value.durationSeconds, flyDirection: value.flyDirection, timing: value.timing, delaySeconds: value.delaySeconds, chatMessage: value.chatMessage })
     && typeof value.enabled === "boolean" && Number.isFinite(value.cooldownSeconds) && value.cooldownSeconds >= 0 && value.cooldownSeconds <= 86400
     && (value.match === undefined || (typeof value.match === "string" && value.match.length <= 100))
     && (value.minimum === undefined || (Number.isFinite(value.minimum) && value.minimum >= 0 && value.minimum <= 10_000_000))
+    && (value.channel === undefined || (typeof value.channel === "string" && /^[a-z0-9_]{3,25}$/.test(value.channel)))
     && (value.permission === undefined || ["everyone", "vip", "moderator", "streamer"].includes(value.permission))
     && (value.steps === undefined || (Array.isArray(value.steps) && value.steps.length >= 2 && value.steps.length <= 10 && value.steps.every(validTriggerStep)));
 }

@@ -21,7 +21,11 @@ import { useSocket } from "../hooks/useSocket";
 import { randomUUID } from "../utils";
 import type { AuthUser } from "../hooks/useAuth";
 import { authHeaders } from "../hooks/useAuth";
-import type { CanvasElement, FlyDirection, MediaControlPayload } from "../types";
+import type {
+  CanvasElement,
+  FlyDirection,
+  MediaControlPayload,
+} from "../types";
 import {
   Activity,
   Eye,
@@ -35,6 +39,7 @@ import {
 } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 import { HelpGuide } from "../components/HelpGuide";
+import { SelectionHint } from "../components/SelectionHint";
 import TileController from "../components/TileController";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
@@ -42,7 +47,7 @@ type DashboardTheme = "fox" | "custom";
 const THEME_STORAGE_KEY = "dashboard_theme";
 const CUSTOM_ACCENT_STORAGE_KEY = "dashboard_custom_accent";
 
-function customAccentVariables(hex: string) {
+export function customAccentVariables(hex: string) {
   const value = hex.replace("#", "");
   const rgb = [0, 2, 4].map((offset) =>
     Number.parseInt(value.slice(offset, offset + 2), 16),
@@ -88,7 +93,12 @@ export function Dashboard({
     ((id: string, changes: Partial<CanvasElement>) => void) | null
   >(null);
   const previewFlyRef = useRef<
-    ((id: string, direction: FlyDirection, durationSeconds: number) => boolean) | null
+    | ((
+        id: string,
+        direction: FlyDirection,
+        durationSeconds: number,
+      ) => boolean)
+    | null
   >(null);
 
   const handleIncomingMediaControl = useCallback(
@@ -338,8 +348,12 @@ export function Dashboard({
 
   const handleGroup = useCallback(() => {
     const groupId = randomUUID();
-    selectedIds.forEach((id) => updateElement(id, { groupId }));
-  }, [selectedIds, updateElement]);
+    const groupCount = new Set(
+      elements.flatMap((element) => (element.groupId ? [element.groupId] : [])),
+    ).size;
+    const groupName = `Group ${groupCount + 1}`;
+    selectedIds.forEach((id) => updateElement(id, { groupId, groupName }));
+  }, [elements, selectedIds, updateElement]);
 
   const handleUngroup = useCallback(() => {
     // Send null — server and clients both treat null groupId as "clear group"
@@ -605,7 +619,7 @@ export function Dashboard({
               color: twitchChannel === "wixels" ? "var(--accent-text)" : "#ccc",
               cursor: "pointer",
             }}
-            title={`Switch preview from ${twitchChannel} to ${twitchChannel === "vicksy" ? "wixels" : "vicksy"}`}
+            title={`Switch preview from ${twitchChannel} to ${twitchChannel === "vicksy" ? "wixels" : "vicksy"} (This will change the preview/layout for everyone)`}
           >
             <Repeat2 size={15} />
           </button>
@@ -631,7 +645,7 @@ export function Dashboard({
             title={
               showStudio
                 ? "Close production tools"
-                : "Open sounds, chat commands, emotes, and overlay effects"
+                : "Open the Soundboard, chat commands, emotes, and overlay effects"
             }
             style={{
               background: showStudio ? "var(--accent-surface)" : "#181818",
@@ -647,6 +661,7 @@ export function Dashboard({
 
       <Toolbar
         onAdd={handleAdd}
+        onSaveSound={saveSound}
         drawMode={drawMode}
         onDrawModeToggle={() => setDrawMode((v) => !v)}
         drawColor={drawColor}
@@ -682,6 +697,10 @@ export function Dashboard({
           onGroup={handleGroup}
           onUngroup={handleUngroup}
           onElementChange={updateElement}
+          dvdCelebrationSettings={dvdCelebrationSettings}
+          dvdSoundUploading={dvdSoundUploading}
+          onDvdSettingsChange={setDvdCelebrationSettings}
+          onDvdSoundUpload={handleDvdSoundUpload}
           footer={
             <div
               style={{
@@ -1379,15 +1398,11 @@ export function Dashboard({
                       style={{
                         width: "100%",
                         justifyContent: "space-between",
-                        background: showCursorOnOverlay
-                          ? "#052e16"
-                          : "#2a1717",
+                        background: showCursorOnOverlay ? "#052e16" : "#2a1717",
                         border: showCursorOnOverlay
                           ? "1px solid #16a34a"
                           : "1px solid #7f1d1d",
-                        color: showCursorOnOverlay
-                          ? "#bbf7d0"
-                          : "#fecaca",
+                        color: showCursorOnOverlay ? "#bbf7d0" : "#fecaca",
                       }}
                     >
                       <span>Overlay cursor</span>
@@ -1408,7 +1423,9 @@ export function Dashboard({
                             width: 7,
                             height: 7,
                             borderRadius: "50%",
-                            background: showCursorOnOverlay ? "#22c55e" : "#ef4444",
+                            background: showCursorOnOverlay
+                              ? "#22c55e"
+                              : "#ef4444",
                             boxShadow: showCursorOnOverlay
                               ? "0 0 7px rgba(34,197,94,.7)"
                               : "none",
@@ -1541,6 +1558,7 @@ export function Dashboard({
             }
           />
           <HelpGuide />
+          <SelectionHint elements={elements} selectedIds={selectedIds} />
         </div>
         <div
           className={`studio-panel-shell${showStudio ? " studio-panel-shell--open" : ""}`}

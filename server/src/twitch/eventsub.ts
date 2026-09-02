@@ -3,6 +3,7 @@ import type { TriggerEventType } from '../types.js';
 import type { ChatPermission } from '../types.js';
 
 type ChatCommandEvent = {
+  channel?: string;
   message: { text: string };
   reward?: { title?: string };
   bits?: number;
@@ -22,6 +23,10 @@ const allowedChannels = new Set(['vicksy', 'wixels']);
 let handler: EventHandler | null = null;
 let statusHandler: ((connected: boolean) => void) | null = null;
 let client: tmi.Client | null = null;
+
+export function emitTwitchEvent(type: TriggerEventType, event: ChatCommandEvent) {
+  handler?.(type, event);
+}
 
 /**
  * Connects to public Twitch chat anonymously. This listener can read public
@@ -76,7 +81,8 @@ export function restartTwitchEvents() {
       }
       if (nativeEmotes.length >= 1) break;
     }
-    handler?.('chat-command', {
+    emitTwitchEvent('chat-command', {
+      channel,
       message: { text: message },
       chatter_user_id: tags['user-id'],
       chatter_user_login: tags.username,

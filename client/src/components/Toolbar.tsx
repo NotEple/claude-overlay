@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { randomUUID } from "../utils";
 import { TextDialog, encodeTextSrc } from "./TextDialog";
@@ -43,6 +43,7 @@ const PRESET_COLORS = [
 
 interface ToolbarProps {
   onAdd: (element: CanvasElement) => void;
+  onSaveSound: (item: { id: string; name: string; url: string; volume: number }) => void;
   drawMode: boolean;
   onDrawModeToggle: () => void;
   drawColor: string;
@@ -114,6 +115,7 @@ async function getVisualMediaSize(file: File) {
 
 export function Toolbar({
   onAdd,
+  onSaveSound,
   drawMode,
   onDrawModeToggle,
   drawColor,
@@ -173,9 +175,7 @@ export function Toolbar({
       : { scaleY: -(selectedElement.scaleY ?? 1) });
   };
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadMediaFile = async (file: File) => {
     setUploading(true);
     const visualSizePromise = getVisualMediaSize(file).catch(() => null);
     const body = new FormData();
@@ -187,7 +187,10 @@ export function Toolbar({
         credentials: "include",
         headers: authHeaders(),
       });
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Upload failed (${res.status})`);
+      }
       const { url, mimetype } = await res.json();
       const visualSize = await visualSizePromise;
       const type: MediaType = mimetype.startsWith("audio")
@@ -197,10 +200,12 @@ export function Toolbar({
           : mimetype === "image/gif"
             ? "gif"
             : "image";
+      const mediaUrl = `${SERVER_URL}${url}`;
       onAdd({
         id: randomUUID(),
         type,
-        src: `${SERVER_URL}${url}`,
+        src: mediaUrl,
+        displayName: file.name,
         x: 200,
         y: 200,
         width: type === "audio" ? 360 : (visualSize?.width ?? 400),
@@ -212,13 +217,62 @@ export function Toolbar({
         zIndex: Date.now(),
       });
       toast.success(`${file.name} added to the canvas`);
-    } catch {
-      toast.error("Media upload failed. Check that the server is running and the file type is supported.");
+      if (
+        type === "audio" &&
+        window.confirm(
+          "Also add this audio to the Soundboard? Soundboard clips can play on OBS without creating or showing a canvas layer.",
+        )
+      ) {
+        onSaveSound({
+          id: randomUUID(),
+          name: file.name.replace(/\.[^.]+$/, ""),
+          url: mediaUrl,
+          volume: 0.25,
+        });
+        toast.success(`${file.name} also added to the Soundboard`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Media upload failed");
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await uploadMediaFile(file);
+    e.target.value = "";
+  };
+
+  useEffect(() => {
+    const dropTarget = () => document.querySelector<HTMLElement>("[data-media-drop-target]");
+    const insideTarget = (event: DragEvent) => {
+      const target = dropTarget();
+      if (!target) return false;
+      const rect = target.getBoundingClientRect();
+      return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    };
+    const clear = () => dropTarget()?.classList.remove("media-drop-active");
+    const dragOver = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files") || !insideTarget(event)) { clear(); return; }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      dropTarget()?.classList.add("media-drop-active");
+    };
+    const drop = (event: DragEvent) => {
+      const accepted = insideTarget(event);
+      clear();
+      if (!accepted || !event.dataTransfer?.files.length) return;
+      event.preventDefault();
+      const files = [...event.dataTransfer.files];
+      if (files.length > 1) toast.info("Uploading the first dropped file");
+      void uploadMediaFile(files[0]);
+    };
+    window.addEventListener("dragover", dragOver, true);
+    window.addEventListener("drop", drop, true);
+    window.addEventListener("dragleave", clear);
+    return () => { window.removeEventListener("dragover", dragOver, true); window.removeEventListener("drop", drop, true); window.removeEventListener("dragleave", clear); };
+  });
 
   const handleTextConfirm = (config: TextConfig) => {
     onAdd({
@@ -356,7 +410,7 @@ export function Toolbar({
               }}
             >
               <ImagePlus size={ICON_SIZE} />
-              {uploading ? "Uploading…" : "Media"}
+              {uploading ? "Uploading…" : "Add media"}
             </button>
             {btn(
               <>

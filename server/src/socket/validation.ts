@@ -3,7 +3,7 @@ import type { CanvasElement, DrawStroke, MediaControlPayload } from "../types.js
 const MEDIA_TYPES = new Set(["image", "gif", "video", "audio", "text"]);
 const UPDATE_KEYS = new Set<keyof CanvasElement>([
   "src", "x", "y", "width", "height", "rotation", "scaleX", "scaleY",
-  "visible", "zIndex", "groupId", "mediaCurrentTime", "mediaPaused", "mediaVolume",
+  "visible", "zIndex", "groupId", "groupName", "displayName", "mediaCurrentTime", "mediaPaused", "mediaVolume",
   "autoVisibility",
   "dvdEnabled", "dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY",
   "locked", "opacity", "enterAnimation", "exitAnimation",
@@ -22,6 +22,8 @@ export function validElement(element: CanvasElement): boolean {
     && finite(element.height) && element.height > 0 && element.height <= 10_000
     && finite(element.rotation) && finite(element.scaleX) && finite(element.scaleY)
     && typeof element.visible === "boolean" && finite(element.zIndex)
+    && (element.groupName === undefined || boundedString(element.groupName, 80))
+    && (element.displayName === undefined || boundedString(element.displayName, 120))
     && (element.autoVisibility === undefined || typeof element.autoVisibility === "boolean")
     && (element.dvdEnabled === undefined || typeof element.dvdEnabled === "boolean")
     && (element.locked === undefined || typeof element.locked === "boolean")
@@ -58,6 +60,8 @@ export function validElementUpdate(changes: Partial<CanvasElement>): boolean {
   }
   if ("mediaVolume" in candidate && (!finite(candidate.mediaVolume) || (candidate.mediaVolume as number) < 0 || (candidate.mediaVolume as number) > 1)) return false;
   if ("groupId" in candidate && candidate.groupId !== null && candidate.groupId !== undefined && !boundedString(candidate.groupId, 100)) return false;
+  if ("groupName" in candidate && candidate.groupName !== undefined && !boundedString(candidate.groupName, 80)) return false;
+  if ("displayName" in candidate && candidate.displayName !== undefined && !boundedString(candidate.displayName, 120)) return false;
   return true;
 }
 

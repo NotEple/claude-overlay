@@ -14,6 +14,8 @@ export interface CanvasElement {
   visible: boolean;
   zIndex: number;
   groupId?: string | null;
+  groupName?: string;
+  displayName?: string;
   mediaCurrentTime?: number;
   mediaPaused?: boolean;
   mediaVolume?: number;
@@ -41,7 +43,7 @@ export interface SavedScene { id: string; name: string; elements: CanvasElement[
 export interface ElementPreset { id: string; name: string; elements: CanvasElement[]; createdAt: string; }
 export interface SoundboardItem { id: string; name: string; url: string; volume: number; }
 export type TriggerEventType = 'chat-command' | 'follow' | 'subscribe' | 'gift-subscribe' | 'raid' | 'bits' | 'channel-points';
-export type TriggerActionType = 'show-element' | 'show-temporary' | 'fly-across' | 'hide-element' | 'toggle-element' | 'play-media' | 'play-sound' | 'enable-dvd' | 'refresh-overlay';
+export type TriggerActionType = 'show-element' | 'show-temporary' | 'fly-across' | 'hide-element' | 'toggle-element' | 'play-media' | 'play-sound' | 'enable-dvd' | 'refresh-overlay' | 'send-chat';
 export type TriggerPlacement = 'current' | 'random' | 'fit' | 'fill' | 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
 export type FlyDirection = 'left-to-right-top' | 'left-to-right-center' | 'left-to-right-bottom' | 'right-to-left-top' | 'right-to-left-center' | 'right-to-left-bottom' | 'top-to-bottom-left' | 'top-to-bottom-center' | 'top-to-bottom-right' | 'bottom-to-top-left' | 'bottom-to-top-center' | 'bottom-to-top-right';
 export type ChatPermission = 'everyone' | 'vip' | 'moderator' | 'streamer';
@@ -53,6 +55,7 @@ export interface TriggerStep {
   flyDirection?: FlyDirection;
   timing?: "immediate" | "delay" | "after-previous";
   delaySeconds?: number;
+  chatMessage?: string;
 }
 export interface OverlayTrigger extends TriggerStep {
   id: string;
@@ -61,6 +64,7 @@ export interface OverlayTrigger extends TriggerStep {
   event: TriggerEventType;
   match?: string;
   minimum?: number;
+  channel?: string;
   cooldownSeconds: number;
   permission?: ChatPermission;
   steps?: TriggerStep[];

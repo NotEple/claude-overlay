@@ -112,19 +112,33 @@ export function useSocket({
   const connectedOnceRef = useRef(false);
   const lastConnectionToastRef = useRef(0);
   const activeSoundAudioRef = useRef<Set<HTMLAudioElement>>(new Set());
+  const previewAudioBySoundRef = useRef<Map<string, Set<HTMLAudioElement>>>(new Map());
 
   const startSound = useCallback(
     (
       item: SoundboardItem & { playbackId?: string },
       mutedStart: boolean,
       reportError: boolean,
+      previewSoundId?: string,
     ) => {
       const audio = new Audio(item.url);
       activeSoundAudioRef.current.add(audio);
+      if (previewSoundId) {
+        const previews = previewAudioBySoundRef.current.get(previewSoundId) ?? new Set<HTMLAudioElement>();
+        previews.add(audio);
+        previewAudioBySoundRef.current.set(previewSoundId, previews);
+      }
       audio.preload = "auto";
       audio.volume = item.volume;
       audio.muted = mutedStart;
-      const cleanup = () => activeSoundAudioRef.current.delete(audio);
+      const cleanup = () => {
+        activeSoundAudioRef.current.delete(audio);
+        if (previewSoundId) {
+          const previews = previewAudioBySoundRef.current.get(previewSoundId);
+          previews?.delete(audio);
+          if (!previews?.size) previewAudioBySoundRef.current.delete(previewSoundId);
+        }
+      };
       let completionReported = false;
       const reportPlaybackEnded = () => {
         if (completionReported || mode !== "overlay" || !item.playbackId) return;
@@ -234,6 +248,7 @@ export function useSocket({
 
     // Batch position updates via rAF
     socket.on("element:updated", ({ id, changes }) => {
+      if (!changes || typeof changes !== "object") return;
       // Flight duration must use the receiving browser's clock. Comparing a
       // Render server timestamp with a viewer's system clock can clamp the
       // animation to its beginning or end and make duration changes ineffective.
@@ -360,7 +375,10 @@ export function useSocket({
             const u = batch.get(el.id);
             if (!u) return el;
             const merged = { ...el, ...u };
-            if ("groupId" in u && u.groupId === null) delete merged.groupId;
+            if ("groupId" in u && u.groupId === null) {
+              delete merged.groupId;
+              delete merged.groupName;
+            }
             return merged;
           }),
         );
@@ -393,12 +411,18 @@ export function useSocket({
   };
   const updateElement = useCallback(
     (id: string, changes: Partial<CanvasElement>) => {
+      // Socket payloads are runtime data even though this function is typed.
+      // Ignore invalid callers instead of allowing `in`/spread operations on
+      // null to take down the entire dashboard.
+      if (!changes || typeof changes !== "object") return;
       setElements((prev) =>
         prev.map((el) => {
           if (el.id !== id) return el;
           const merged = { ...el, ...changes };
-          if ("groupId" in changes && changes.groupId === null)
+          if ("groupId" in changes && changes.groupId === null) {
             delete merged.groupId;
+            delete merged.groupName;
+          }
           return merged;
         }),
       );
@@ -494,7 +518,12 @@ export function useSocket({
     [],
   );
   const saveSound = useCallback(
-    (item: SoundboardItem) => socketRef.current?.emit("sound:save", item),
+    (item: SoundboardItem) => {
+      previewAudioBySoundRef.current.get(item.id)?.forEach((audio) => {
+        audio.volume = item.volume;
+      });
+      socketRef.current?.emit("sound:save", item);
+    },
     [],
   );
   const deleteSound = useCallback(
@@ -510,7 +539,7 @@ export function useSocket({
       }
       // Local-only safety preview, started synchronously from the click so the
       // browser recognizes the user gesture.
-      startSound(item, false, true);
+      startSound(item, false, true, item.id);
     },
     [studio.sounds, startSound, toast],
   );

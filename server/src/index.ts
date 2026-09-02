@@ -17,8 +17,14 @@ import type {
   ServerToClientEvents,
   ClientToServerEvents,
 } from "./types.js";
-import { configureTwitchEvents } from "./twitch/eventsub.js";
+import { configureTwitchEvents, emitTwitchEvent } from "./twitch/eventsub.js";
+import { getValidEventAuth, initializeEventAuthStore } from "./twitch/eventAuthStore.js";
+import { twitchClientId } from "./auth/twitch.js";
+import { createEventRoutes } from "./twitch/eventRoutes.js";
+import { createEventWebhook } from "./twitch/eventWebhook.js";
 import { resolveSevenTvEmotes } from "./seventv/emotes.js";
+import { initializeWhitelistStore } from "./db/index.js";
+import { myinstantsRouter } from "./uploads/myinstants.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -28,7 +34,16 @@ const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
 // ---------------------------------------------------------------------------
 app.set("trust proxy", 1);
 app.use(cors({ origin: CLIENT_URL, credentials: true }));
+app.use("/twitch/eventsub", express.raw({ type: "application/json", limit: "256kb" }), createEventWebhook(emitTwitchEvent));
 app.use(express.json());
+await initializeEventAuthStore().catch((error) =>
+  console.error("Event database initialization failed", error),
+);
+await initializeWhitelistStore().catch((error) => {
+  console.error("Whitelist database initialization failed", error);
+  if (process.env.NODE_ENV === "production") throw error;
+});
+app.use(createEventRoutes(emitTwitchEvent));
 
 // ---------------------------------------------------------------------------
 // Socket.io
@@ -161,8 +176,39 @@ function presentElement(
   return pending;
 }
 
-function executeTriggerStep(step: TriggerStep): Promise<void> {
+type TriggerEventPayload = Record<string, any>;
+
+function renderEventMessage(template: string, event: TriggerEventPayload) {
+  const values: Record<string, string> = {
+    user: String(event.user_name ?? event.chatter_user_name ?? event.from_broadcaster_user_name ?? "Viewer"),
+    months: String(event.cumulative_months ?? event.duration_months ?? 0),
+    viewers: String(event.viewers ?? 0),
+    bits: String(event.bits ?? 0),
+    reward: String(event.reward?.title ?? event.reward_title ?? ""),
+    channel: String(event.channel ?? event.broadcaster_user_login ?? ""),
+  };
+  return template.replace(/\{(user|months|viewers|bits|reward|channel)\}/gi, (_, key: string) => values[key.toLowerCase()] ?? "").slice(0, 500);
+}
+
+async function sendEventChatMessage(step: TriggerStep, event: TriggerEventPayload) {
+  const channel = String(event.channel ?? event.broadcaster_user_login ?? "").toLowerCase();
+  const auth = channel ? await getValidEventAuth(channel) : null;
+  if (!auth || !step.chatMessage) throw new Error(`No writable Twitch Events connection for ${channel || "this channel"}`);
+  if (!auth.scopes.includes("user:write:chat")) throw new Error(`${auth.displayName} must reconnect Twitch Events to grant chat-message permission`);
+  const response = await fetch("https://api.twitch.tv/helix/chat/messages", {
+    method: "POST",
+    headers: { "Client-Id": twitchClientId, Authorization: `Bearer ${auth.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ broadcaster_id: auth.twitchUserId, sender_id: auth.twitchUserId, message: renderEventMessage(step.chatMessage, event) }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Twitch chat message failed (${response.status}): ${detail.slice(0, 300)}`);
+  }
+}
+
+function executeTriggerStep(step: TriggerStep, event: TriggerEventPayload): Promise<void> {
   if (step.action === 'refresh-overlay') { io.emit('overlay:refresh'); return Promise.resolve(); }
+  if (step.action === 'send-chat') return sendEventChatMessage(step, event);
   if (step.action === 'play-sound') {
     const sound = canvasStore.sounds.find(item => item.id === step.targetId);
     if (!sound) return Promise.resolve();
@@ -182,7 +228,7 @@ function executeTriggerStep(step: TriggerStep): Promise<void> {
   const element = canvasStore.canvasState.elements.find(item => item.id === step.targetId);
   if (!element) return Promise.resolve();
   if (step.action === 'play-media') {
-    if (element.type !== 'video') return Promise.resolve();
+    if (element.type !== 'video' && element.type !== 'audio') return Promise.resolve();
     presentElement(element, step.placement);
     element.autoVisibility = true;
     io.emit('element:updated', { id: element.id, changes: { autoVisibility: true } });
@@ -210,12 +256,12 @@ function executeTriggerStep(step: TriggerStep): Promise<void> {
   return Promise.resolve();
 }
 
-async function executeTriggerSteps(steps: TriggerStep[]) {
+async function executeTriggerSteps(steps: TriggerStep[], event: TriggerEventPayload) {
   let previousCompletion = Promise.resolve();
   for (const step of steps) {
     if (step.timing === "after-previous") await previousCompletion;
     if (step.timing === "delay") await delay((step.delaySeconds ?? 1) * 1000);
-    previousCompletion = executeTriggerStep(step);
+    previousCompletion = executeTriggerStep(step, event).catch((error) => console.error("Trigger action failed", error));
   }
 }
 
@@ -297,6 +343,7 @@ app.use(
 );
 
 app.use("/upload", uploadRouter);
+app.use("/myinstants", myinstantsRouter);
 app.use("/files", setUploadedMediaHeaders, express.static(UPLOAD_DIR));
 
 // ---------------------------------------------------------------------------
@@ -394,13 +441,19 @@ configureTwitchEvents((eventType, event) => {
       if (roleRank[chatter] < roleRank[required]) continue;
     }
     if (eventType === 'channel-points' && trigger.match && trigger.match.toLowerCase() !== reward) continue;
-    if (eventType === 'bits' && Number(event.bits ?? 0) < (trigger.minimum ?? 0)) continue;
+    const eventAmount = eventType === 'bits' ? Number(event.bits ?? 0)
+      : eventType === 'raid' ? Number((event as any).viewers ?? 0)
+        : eventType === 'gift-subscribe' ? Number((event as any).total ?? 0)
+          : eventType === 'subscribe' ? Number((event as any).cumulative_months ?? (event as any).duration_months ?? 1)
+            : 0;
+    if (trigger.minimum !== undefined && eventAmount < trigger.minimum) continue;
+    if (trigger.channel && trigger.channel !== String((event as any).channel ?? (event as any).broadcaster_user_login ?? '').toLowerCase()) continue;
     triggerCooldowns.set(trigger.id, now + trigger.cooldownSeconds * 1000);
     canvasStore.activity.unshift({ id: randomUUID(), at: new Date().toISOString(), user: 'Twitch', action: `ran trigger “${trigger.name}”` });
     canvasStore.activity = canvasStore.activity.slice(0, 50);
     io.to('dashboard').emit('studio:sync', { scenes: canvasStore.scenes, presets: canvasStore.presets, sounds: canvasStore.sounds, triggers: canvasStore.triggers, activity: canvasStore.activity, twitchConnected: canvasStore.twitchConnected });
     const steps = trigger.steps?.length ? trigger.steps : [trigger];
-    void executeTriggerSteps(steps);
+    void executeTriggerSteps(steps, event);
   }
 }, connected => {
   canvasStore.twitchConnected = connected;

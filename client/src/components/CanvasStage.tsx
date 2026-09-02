@@ -53,6 +53,7 @@ import {
   RotateCw,
   Lock,
   Unlock,
+  Pencil,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -73,6 +74,7 @@ import {
   applyNodeTransform,
 } from "../canvas/elementTransforms";
 import { createDvdMotion, getDvdPosition } from "../canvas/dvdMotion";
+import { DvdCelebrationControls } from "./DvdCelebrationControls";
 
 export {
   STREAM_W,
@@ -162,13 +164,23 @@ function addResizeHandle(
     const startSignY = startScale.y < 0 ? -1 : 1;
     const startLeft = parseFloat(container.style.left) || 0;
     const startTop = parseFloat(container.style.top) || 0;
+    const startRotation = (getRotation(container) * Math.PI) / 180;
+    const cos = Math.cos(startRotation);
+    const sin = Math.sin(startRotation);
+    const startCenterX = startLeft + startW / 2;
+    const startCenterY = startTop + startH / 2;
     let lastEmit = 0;
     let pendingChanges: Partial<CanvasElement> | null = null;
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== e.pointerId) return;
       const zoom = getZoom();
-      const dx = (ev.clientX - startX) / zoom;
-      const dy = (ev.clientY - startY) / zoom;
+      const screenDx = (ev.clientX - startX) / zoom;
+      const screenDy = (ev.clientY - startY) / zoom;
+      // Resize in the element's own coordinate system. Applying screen-space
+      // deltas directly makes a 90°-rotated element resize sideways, and also
+      // moves the supposedly fixed opposite handle.
+      const dx = screenDx * cos + screenDy * sin;
+      const dy = -screenDx * sin + screenDy * cos;
 
       // All 8 handles: pure resize (change width/height, anchor opposite edge/corner).
       // Scale is always reset to ±1 so any prior stretch is cleared on resize.
@@ -235,6 +247,18 @@ function addResizeHandle(
         }
       }
 
+      // The calculations above describe the resized box in its unrotated local
+      // space. Rotate its center displacement back into workspace coordinates
+      // so the opposite edge/corner remains visually anchored.
+      const localCenterShiftX = newLeft + newW / 2 - startCenterX;
+      const localCenterShiftY = newTop + newH / 2 - startCenterY;
+      const centerX =
+        startCenterX + localCenterShiftX * cos - localCenterShiftY * sin;
+      const centerY =
+        startCenterY + localCenterShiftX * sin + localCenterShiftY * cos;
+      newLeft = centerX - newW / 2;
+      newTop = centerY - newH / 2;
+
       container.style.width = newW + "px";
       container.style.height = newH + "px";
       container.style.left = newLeft + "px";
@@ -270,6 +294,7 @@ function addResizeHandle(
       if (btn.hasPointerCapture(e.pointerId)) {
         btn.releasePointerCapture(e.pointerId);
       }
+
     };
     btn.addEventListener("pointermove", onMove);
     btn.addEventListener("pointerup", finish);
@@ -287,6 +312,8 @@ function addRotationHandle(
   canRotate: () => boolean = () => true,
   onStart?: () => void,
   onEnd?: () => void,
+  getPivot?: () => { x: number; y: number } | null,
+  onGroupRotate?: (deltaDegrees: number) => void,
 ) {
   const handle = document.createElement("div");
   handle.className = "rh rotation-handle";
@@ -316,8 +343,9 @@ function addRotationHandle(
     onStart?.();
 
     const rect = container.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    const pivot = getPivot?.();
+    const centerX = pivot?.x ?? rect.left + rect.width / 2;
+    const centerY = pivot?.y ?? rect.top + rect.height / 2;
     const startRotation = getRotation(container);
     const startAngle = Math.atan2(
       event.clientY - centerY,
@@ -334,11 +362,16 @@ function addRotationHandle(
       let rotation =
         startRotation + ((angle - startAngle) * 180) / Math.PI;
       if (moveEvent.shiftKey) rotation = Math.round(rotation / 15) * 15;
-      setRotation(container, rotation);
-      applyNodeTransform(container);
-      pending = { rotation };
+      const delta = rotation - startRotation;
+      if (onGroupRotate && pivot) {
+        onGroupRotate(delta);
+      } else {
+        setRotation(container, rotation);
+        applyNodeTransform(container);
+        pending = { rotation };
+      }
       const now = Date.now();
-      if (now - lastEmit >= 16) {
+      if (pending && now - lastEmit >= 16) {
         lastEmit = now;
         onUpdate(pending);
         pending = null;
@@ -444,7 +477,10 @@ function makeDraggable(
         const ch = { x: snapped.x, y: snapped.y };
         dragPending = ch;
         const now = Date.now();
-        if (now - dragLastEmit > 16) {
+        // The DOM already moves every pointer event. State/socket updates only
+        // need a modest cadence; flooding them creates an echo backlog that can
+        // continue moving grouped elements after the pointer is released.
+        if (now - dragLastEmit > 50) {
           dragLastEmit = now;
           onUpdate(ch);
           dragPending = null;
@@ -554,6 +590,18 @@ function snapToStream(
   let snappedY = y;
   let guideX: number | undefined;
   let guideY: number | undefined;
+
+  // Stream guides are contextual to the visible output, not the surrounding
+  // workspace. Keep edge snapping available while an element is entering the
+  // stream, but disable every stream guide once its box is fully outside.
+  const nearOrInsideStream =
+    x + width >= left - threshold &&
+    x <= right + threshold &&
+    y + height >= top - threshold &&
+    y <= bottom + threshold;
+  if (!nearOrInsideStream) {
+    return { x, y, guideX, guideY };
+  }
 
   const xCandidates = [
     { distance: Math.abs(x - left), value: left, guide: left },
@@ -749,7 +797,7 @@ function createMediaElement(
       "width:100%;height:100%;min-height:86px;display:flex;flex-direction:column;" +
       "box-sizing:border-box;background:#17171b;border:1px solid #34343c;border-radius:8px;overflow:hidden;";
 
-    const name = getFileLabel(src) || "Audio";
+    const name = el.displayName || getFileLabel(src) || "Audio";
     const label = document.createElement("div");
     label.title = `${name} · Drag to move · Use the round handle above the selection to rotate`;
     label.style.cssText =
@@ -760,6 +808,7 @@ function createMediaElement(
     labelIcon.innerHTML = iconHTML(FileAudio, 12);
     labelIcon.style.cssText = "display:flex;flex-shrink:0;";
     const labelText = document.createElement("span");
+    labelText.className = "media-name";
     labelText.textContent = name;
     labelText.style.cssText =
       "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
@@ -832,6 +881,10 @@ export function ElementPanel({
   onGroup,
   onUngroup,
   onElementChange,
+  dvdCelebrationSettings,
+  dvdSoundUploading,
+  onDvdSettingsChange,
+  onDvdSoundUpload,
   footer,
 }: {
   elements: CanvasElement[];
@@ -842,6 +895,10 @@ export function ElementPanel({
   onGroup: () => void;
   onUngroup: () => void;
   onElementChange: (id: string, changes: Partial<CanvasElement>) => void;
+  dvdCelebrationSettings: DvdCelebrationSettings;
+  dvdSoundUploading: boolean;
+  onDvdSettingsChange: (settings: DvdCelebrationSettings) => void;
+  onDvdSoundUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   footer?: React.ReactNode;
 }) {
   const slots = buildSlots(elements);
@@ -1013,7 +1070,7 @@ export function ElementPanel({
     const label =
       el.type === "text"
         ? parseTextSrc(el.src).text.slice(0, 18) || "Text"
-        : getFileLabel(el.src).slice(0, 22) || el.type;
+        : (el.displayName || getFileLabel(el.src)).slice(0, 22) || el.type;
     const isTop = inGroup ? memberIdx === 0 : slotIdx === 0;
     const isBottom = inGroup
       ? memberIdx === groupSize! - 1
@@ -1049,6 +1106,36 @@ export function ElementPanel({
         >
           {label}
         </span>
+        {el.type !== "text" && (
+          <button
+            className="ui-icon-button ui-button--compact"
+            title="Rename this media in the dashboard"
+            aria-label={`Rename ${label}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              const value = window.prompt(
+                "Media name",
+                el.displayName || getFileLabel(el.src) || el.type,
+              )?.trim();
+              if (value) onElementChange(el.id, { displayName: value.slice(0, 120) });
+            }}
+            style={{
+              width: 22,
+              height: 22,
+              padding: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              background: "#1d1d20",
+              border: "1px solid #34343a",
+              color: "#aeb6c2",
+              cursor: "pointer",
+            }}
+          >
+            <Pencil size={11} />
+          </button>
+        )}
         <div
           style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}
         >
@@ -1253,6 +1340,7 @@ export function ElementPanel({
         </div>
       </div>
       {selectedElement?.dvdEnabled && !selectedElement.locked && (
+        <div className="dvd-selected-controls">
         <div
           style={{
             height: 34,
@@ -1300,6 +1388,8 @@ export function ElementPanel({
           >
             {dvdSpeed}
           </span>
+        </div>
+        <DvdCelebrationControls settings={dvdCelebrationSettings} uploading={dvdSoundUploading} onChange={onDvdSettingsChange} onSoundUpload={onDvdSoundUpload}/>
         </div>
       )}
       {selectedElement && (
@@ -1371,13 +1461,46 @@ export function ElementPanel({
                     fontWeight: 600,
                   }}
                 >
-                  Group{" "}
+                  {slot.members[0]?.groupName || "Group"}{" "}
                   <span
                     style={{ color: "#8b95a5", fontWeight: 500, fontSize: 10 }}
                   >
                     ({slot.members.length})
                   </span>
                 </span>
+                <button
+                  className="ui-icon-button ui-button--compact"
+                  title="Rename this group"
+                  aria-label="Rename group"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const value = window.prompt(
+                      "Group name",
+                      slot.members[0]?.groupName || "Group",
+                    )?.trim();
+                    if (!value) return;
+                    slot.members.forEach((member) =>
+                      onElementChange(member.id, {
+                        groupName: value.slice(0, 80),
+                      }),
+                    );
+                  }}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    padding: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    background: "#1d1d20",
+                    border: "1px solid #34343a",
+                    color: "var(--accent-text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Pencil size={11} />
+                </button>
                 <div
                   style={{
                     display: "flex",
@@ -2140,10 +2263,11 @@ export function CanvasStage({
           () =>
             !elementsRef.current.find((element) => element.id === el.id)
               ?.locked,
-          onDragStart,
-          onDragEnd,
+          () => draggingRef.current.add(el.id),
+          () => draggingRef.current.delete(el.id),
         );
 
+        let groupDragLastEmit = 0;
         makeDraggable(
           node,
           getZoom,
@@ -2152,6 +2276,23 @@ export function CanvasStage({
             // Move all other group members
             const thisEl = elementsRef.current.find((e) => e.id === el.id);
             if (!thisEl?.groupId) return;
+            const groupBox = groupBoxMapRef.current.get(thisEl.groupId);
+            if (groupBox) {
+              if (!groupBox.dataset.dragStartLeft) {
+                groupBox.dataset.dragStartLeft = String(
+                  parseFloat(groupBox.style.left) || 0,
+                );
+                groupBox.dataset.dragStartTop = String(
+                  parseFloat(groupBox.style.top) || 0,
+                );
+              }
+              groupBox.style.left = `${Number(groupBox.dataset.dragStartLeft) + dx}px`;
+              groupBox.style.top = `${Number(groupBox.dataset.dragStartTop) + dy}px`;
+              if (final) {
+                delete groupBox.dataset.dragStartLeft;
+                delete groupBox.dataset.dragStartTop;
+              }
+            }
             for (const other of elementsRef.current) {
               if (other.id === el.id || other.groupId !== thisEl.groupId || other.locked)
                 continue;
@@ -2171,12 +2312,17 @@ export function CanvasStage({
               const ny = startTop + dy;
               otherNode.style.left = nx + "px";
               otherNode.style.top = ny + "px";
-              // Always emit so all clients + overlay see the whole group move together
-              onElementChange(other.id, { x: nx, y: ny });
+              const now = Date.now();
+              if (final || now - groupDragLastEmit >= 50) {
+                onElementChange(other.id, { x: nx, y: ny });
+              }
               if (final) {
                 delete otherNode.dataset.startLeft;
                 delete otherNode.dataset.startTop;
               }
+            }
+            if (final || Date.now() - groupDragLastEmit >= 50) {
+              groupDragLastEmit = Date.now();
             }
           },
           el.type === "text" ? () => onEditText?.(el.id) : null,
@@ -2236,6 +2382,14 @@ export function CanvasStage({
           span.style.color = color;
           span.style.fontSize = fontSize + "px";
           span.style.fontFamily = fontFamily + ", sans-serif";
+        }
+      } else {
+        const mediaName = node.querySelector<HTMLElement>(".media-name");
+        if (mediaName) {
+          const label = el.displayName || getFileLabel(el.src) || el.type;
+          mediaName.textContent = label;
+          mediaName.parentElement!.title =
+            `${label} · Drag to move · Use the round handle above the selection to rotate`;
         }
       }
 
@@ -2299,16 +2453,140 @@ export function CanvasStage({
     const PAD = 10;
     for (const [gid, members] of activeGroups) {
       if (members.length < 2) continue;
-      const minX = Math.min(...members.map((e) => e.x)) - PAD;
-      const minY = Math.min(...members.map((e) => e.y)) - PAD;
-      const maxX = Math.max(...members.map((e) => e.x + e.width)) + PAD;
-      const maxY = Math.max(...members.map((e) => e.y + e.height)) + PAD;
+      const corners = members.flatMap((member) => {
+        const memberNode = nodeMap.get(member.id);
+        const x = memberNode
+          ? parseFloat(memberNode.style.left) || member.x
+          : member.x;
+        const y = memberNode
+          ? parseFloat(memberNode.style.top) || member.y
+          : member.y;
+        const width = memberNode?.offsetWidth || member.width;
+        const height = memberNode?.offsetHeight || member.height;
+        const rotation = memberNode ? getRotation(memberNode) : (member.rotation ?? 0);
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+        const angle = (rotation * Math.PI) / 180;
+        const memberCos = Math.cos(angle);
+        const memberSin = Math.sin(angle);
+        return [
+          [-width / 2, -height / 2],
+          [width / 2, -height / 2],
+          [width / 2, height / 2],
+          [-width / 2, height / 2],
+        ].map(([cornerX, cornerY]) => ({
+          x: centerX + cornerX * memberCos - cornerY * memberSin,
+          y: centerY + cornerX * memberSin + cornerY * memberCos,
+        }));
+      });
+      const minX = Math.min(...corners.map((corner) => corner.x)) - PAD;
+      const minY = Math.min(...corners.map((corner) => corner.y)) - PAD;
+      const maxX = Math.max(...corners.map((corner) => corner.x)) + PAD;
+      const maxY = Math.max(...corners.map((corner) => corner.y)) + PAD;
 
       let box = groupBoxMap.get(gid);
       if (!box) {
         box = document.createElement("div");
         box.style.cssText =
-          "position:absolute;border:1.5px dashed rgba(var(--accent-rgb),0.45);background:rgba(var(--accent-rgb),0.04);pointer-events:none;border-radius:4px;z-index:0;";
+          "position:absolute;border:1.5px dashed rgba(var(--accent-rgb),0.45);background:rgba(var(--accent-rgb),0.04);pointer-events:none;border-radius:4px;";
+        let rotationState:
+          | {
+              pivotX: number;
+              pivotY: number;
+              members: Array<{
+                id: string;
+                centerX: number;
+                centerY: number;
+                width: number;
+                height: number;
+                rotation: number;
+              }>;
+            }
+          | null = null;
+        const rotationHandle = addRotationHandle(
+          box,
+          () => {},
+          () =>
+            elementsRef.current
+              .filter((item) => item.groupId === gid)
+              .some((item) => !item.locked),
+          () => {
+            const currentMembers = elementsRef.current.filter(
+              (item) => item.groupId === gid && !item.locked,
+            );
+            if (currentMembers.length < 2) return;
+            const left = parseFloat(box!.style.left) || 0;
+            const top = parseFloat(box!.style.top) || 0;
+            const width = parseFloat(box!.style.width) || 0;
+            const height = parseFloat(box!.style.height) || 0;
+            rotationState = {
+              pivotX: left + width / 2,
+              pivotY: top + height / 2,
+              members: currentMembers.map((member) => {
+                draggingRef.current.add(member.id);
+                return {
+                  id: member.id,
+                  centerX: member.x + member.width / 2,
+                  centerY: member.y + member.height / 2,
+                  width: member.width,
+                  height: member.height,
+                  rotation: member.rotation ?? 0,
+                };
+              }),
+            };
+          },
+          () => {
+            rotationState = null;
+            draggingRef.current.clear();
+          },
+          () => {
+            if (!rotationState) return null;
+            const workspaceRect = workspace.getBoundingClientRect();
+            const zoom = getZoom();
+            return {
+              x: workspaceRect.left + rotationState.pivotX * zoom,
+              y: workspaceRect.top + rotationState.pivotY * zoom,
+            };
+          },
+          (deltaDegrees) => {
+            if (!rotationState) return;
+            const angle = (deltaDegrees * Math.PI) / 180;
+            const groupCos = Math.cos(angle);
+            const groupSin = Math.sin(angle);
+            for (const member of rotationState.members) {
+              const offsetX = member.centerX - rotationState.pivotX;
+              const offsetY = member.centerY - rotationState.pivotY;
+              const centerX =
+                rotationState.pivotX + offsetX * groupCos - offsetY * groupSin;
+              const centerY =
+                rotationState.pivotY + offsetX * groupSin + offsetY * groupCos;
+              const changes = {
+                x: centerX - member.width / 2,
+                y: centerY - member.height / 2,
+                rotation: member.rotation + deltaDegrees,
+              };
+              const memberNode = nodeMapRef.current.get(member.id);
+              if (memberNode) {
+                memberNode.style.left = `${changes.x}px`;
+                memberNode.style.top = `${changes.y}px`;
+                setRotation(memberNode, changes.rotation);
+                applyNodeTransform(memberNode);
+              }
+              onElementChange(member.id, changes);
+            }
+          },
+        );
+        rotationHandle.classList.add("group-rotation-handle");
+        rotationHandle.style.pointerEvents = "auto";
+        rotationHandle.style.width = "22px";
+        rotationHandle.style.height = "22px";
+        rotationHandle.style.top = "-44px";
+        rotationHandle.style.background = "var(--accent-solid)";
+        rotationHandle.style.color = "var(--accent-contrast)";
+        rotationHandle.style.zIndex = "100000";
+        rotationHandle.title =
+          "Drag to rotate the group · Hold Shift to snap to 15° increments";
+        rotationHandle.setAttribute("aria-label", "Rotate group");
         workspace.insertBefore(box, workspace.firstChild);
         groupBoxMap.set(gid, box);
       }
@@ -2316,6 +2594,13 @@ export function CanvasStage({
       box.style.top = minY + "px";
       box.style.width = maxX - minX + "px";
       box.style.height = maxY - minY + "px";
+      const groupSelected = members.some((member) => selectedIds.has(member.id));
+      const groupRotationHandle = box.querySelector<HTMLElement>(
+        ".group-rotation-handle",
+      );
+      if (groupRotationHandle) {
+        groupRotationHandle.style.display = groupSelected ? "flex" : "none";
+      }
     }
   }, [
     elements,
@@ -2451,6 +2736,8 @@ export function CanvasStage({
   return (
     <div
       ref={wrapperRef}
+      data-media-drop-target
+      className="canvas-stage-drop-target"
       style={{
         position: "relative",
         width: "100%",
@@ -3120,6 +3407,7 @@ export const OverlayStage = forwardRef<
           audio.src = el.src;
           audio.volume = el.mediaVolume ?? 0.25;
           audio.preload = "auto";
+          audio.addEventListener("ended", () => onMediaEnded?.(el.id));
           if (el.mediaCurrentTime && el.mediaCurrentTime > 0) {
             audio.addEventListener(
               "loadedmetadata",

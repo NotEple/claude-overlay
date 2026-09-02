@@ -27,8 +27,24 @@ export function getTwitchAuthUrl(state: string): string {
   return `https://id.twitch.tv/oauth2/authorize?${params}`;
 }
 
-export interface TwitchTokenSet { accessToken: string; refreshToken: string; expiresIn: number; }
+export function getTwitchEventsAuthUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: TWITCH_CLIENT_ID,
+    redirect_uri: process.env.TWITCH_EVENTS_REDIRECT_URI!,
+    response_type: "code",
+    scope: "user:read:chat user:write:chat moderator:read:followers channel:read:subscriptions bits:read channel:read:redemptions channel:read:hype_train",
+    state,
+    force_verify: "true",
+  });
+  return `https://id.twitch.tv/oauth2/authorize?${params}`;
+}
+
+export interface TwitchTokenSet { accessToken: string; refreshToken: string; expiresIn: number; scopes: string[]; }
 export async function exchangeCode(code: string): Promise<TwitchTokenSet> {
+  return exchangeCodeForRedirect(code, TWITCH_REDIRECT_URI);
+}
+
+export async function exchangeCodeForRedirect(code: string, redirectUri: string): Promise<TwitchTokenSet> {
   const res = await fetch("https://id.twitch.tv/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -37,19 +53,22 @@ export async function exchangeCode(code: string): Promise<TwitchTokenSet> {
       client_secret: TWITCH_CLIENT_SECRET,
       code,
       grant_type: "authorization_code",
-      redirect_uri: TWITCH_REDIRECT_URI,
+      redirect_uri: redirectUri,
     }),
   });
-  if (!res.ok) throw new Error("Failed to exchange Twitch code for token");
-  const data = (await res.json()) as { access_token: string; refresh_token: string; expires_in: number };
-  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in };
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Twitch token exchange failed (${res.status}): ${body.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as { access_token: string; refresh_token: string; expires_in: number; scope?: string[] };
+  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in, scopes: data.scope ?? [] };
 }
 
 export async function refreshUserToken(refreshToken: string): Promise<TwitchTokenSet> {
   const res = await fetch("https://id.twitch.tv/oauth2/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: TWITCH_CLIENT_ID, client_secret: TWITCH_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: refreshToken }) });
   if (!res.ok) throw new Error("Failed to refresh Twitch token");
-  const data = await res.json() as { access_token: string; refresh_token: string; expires_in: number };
-  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in };
+  const data = await res.json() as { access_token: string; refresh_token: string; expires_in: number; scope?: string[] };
+  return { accessToken: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in, scopes: data.scope ?? [] };
 }
 
 export const twitchClientId = TWITCH_CLIENT_ID;
@@ -98,7 +117,7 @@ export async function getTwitchChatColor(
 let appAccessToken: string | null = null;
 let appTokenExpiry = 0;
 
-async function getAppAccessToken(): Promise<string> {
+export async function getAppAccessToken(): Promise<string> {
   if (appAccessToken && Date.now() < appTokenExpiry) return appAccessToken;
   const res = await fetch("https://id.twitch.tv/oauth2/token", {
     method: "POST",

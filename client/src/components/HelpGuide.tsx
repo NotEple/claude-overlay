@@ -57,6 +57,10 @@ const sections = [
       ["Fit / Fill", "Fit inside the stream area, or cover it completely."],
       ["DVD", "Start or stop bouncing movement for the selected element."],
       [
+        "Add media / drag and drop",
+        "Upload with Add media, or drag one image, GIF, video, or audio file directly onto the workspace. A highlighted drop area confirms where it will be accepted.",
+      ],
+      [
         "Flip X / Flip Y",
         "Mirror selected visual media horizontally or vertically.",
       ],
@@ -70,24 +74,51 @@ const sections = [
       ["Lock", "Prevent accidental movement, resizing, and deletion."],
       ["Group", "Keep multiple selected layers moving together."],
       [
+        "Group rotation handles",
+        "White handles rotate one member; the accent-colored handle on the dashed group boundary rotates the whole group.",
+      ],
+      [
         "Video body",
         "Click to play or pause; drag to move. Native controls stay at the bottom.",
       ],
       ["Preview eye", "Show or hide the Twitch preview only on the dashboard."],
       [
         "Switch preview",
-        "Switch both the preview and chat command listener between Vicksy and Wixels.",
+        "Switch both the preview and chat command listener between Vicksy and Wixels. This will change the preview for all connected users.",
       ],
       ["Refresh overlay", "Ask connected overlay browser sources to reload."],
-      ["Studio", "Open sounds, commands, chat emotes, and DVD effects."],
+      [
+        "Studio",
+        "Open the Soundboard, commands, Twitch events, and chat emotes.",
+      ],
+      [
+        "Selection hints",
+        "Contextual tips appear whenever a new media element is selected until you choose Don’t show again. Dismissing them permanently does not remove this guide.",
+      ],
     ],
   },
   {
     title: "Commands & effects",
     items: [
       [
+        "Soundboard vs media",
+        "Soundboard clips play through OBS without a canvas layer. Play video/audio layer targets uploaded media in Layers.",
+      ],
+      [
+        "Myinstants links",
+        "Paste the normal URL from a Myinstants sound page. The server securely resolves and stores its direct MP3 link; the sound name is optional.",
+      ],
+      [
         "Add another action",
-        "Chain up to 10 editable actions to one chat command, such as showing an image and playing a sound.",
+        "Chain up to 10 editable actions to one chat command or Twitch event, such as showing an image, playing a sound, and sending a chat message.",
+      ],
+      [
+        "Twitch event filters",
+        "Limit subscriptions by months, gifts by count, raids by viewers, Bits by amount, or channel points by reward title.",
+      ],
+      [
+        "Chat message variables",
+        "Messages can insert {user}, {months}, {viewers}, {bits}, {reward}, and {channel}. The connected broadcaster sends the message.",
       ],
       [
         "Command action timing",
@@ -102,8 +133,8 @@ const sections = [
         "Test a fly-across animation on your dashboard without affecting OBS or other users.",
       ],
       [
-        "Effects · Preview",
-        "Listen to the selected DVD corner sound locally at its configured volume.",
+        "DVD speed panel",
+        "When a selected element is using DVD mode, adjust its speed and the shared corner sound, volume, and counter position directly beneath it.",
       ],
       [
         "Studio · Emotes",
