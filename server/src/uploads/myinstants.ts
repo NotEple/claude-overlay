@@ -25,7 +25,15 @@ myinstantsRouter.post("/resolve", requireAuth, async (req, res) => {
       headers: { "User-Agent": "VicksyOverlay/1.0", Accept: "text/html" },
       signal: AbortSignal.timeout(8_000),
     });
-    if (!response.ok || !response.body) throw new Error(`Myinstants returned ${response.status}`);
+    if (!response.ok || !response.body) {
+      if (response.status === 403) {
+        return res.status(502).json({
+          error:
+            "Myinstants blocked the server lookup. Download the MP3 from its sound page, then use Upload file or drag the MP3 into the dashboard.",
+        });
+      }
+      throw new Error(`Myinstants returned ${response.status}`);
+    }
     const declaredSize = Number(response.headers.get("content-length") ?? 0);
     if (declaredSize > maxHtmlBytes) throw new Error("Myinstants page was unexpectedly large");
     const reader = response.body.getReader();

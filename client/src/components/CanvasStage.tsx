@@ -1559,6 +1559,17 @@ export function ElementPanel({
 // ---------------------------------------------------------------------------
 // Live cursors
 // ---------------------------------------------------------------------------
+function cursorForeground(color: string) {
+  const match = /^#([\da-f]{6})$/i.exec(color);
+  if (!match) return "#ffffff";
+  const value = match[1];
+  const [red, green, blue] = [0, 2, 4].map((offset) =>
+    Number.parseInt(value.slice(offset, offset + 2), 16) / 255,
+  );
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  return luminance > 0.62 ? "#111827" : "#ffffff";
+}
+
 function LiveCursors({
   cursors,
   pan,
@@ -1598,7 +1609,7 @@ function LiveCursors({
             <path
               d="M4 2L16 10L10 11L7 18L4 2Z"
               fill={c.color}
-              stroke="white"
+              stroke={cursorForeground(c.color)}
               strokeWidth={large ? "2" : "1.5"}
             />
           </svg>
@@ -1612,7 +1623,9 @@ function LiveCursors({
               padding: large ? "5px 10px" : "2px 6px",
               whiteSpace: "nowrap",
               marginTop: large ? 3 : 2,
-              border: large ? "2px solid rgba(255,255,255,.85)" : undefined,
+              border: large
+                ? `2px solid ${cursorForeground(c.color)}`
+                : `1px solid ${cursorForeground(c.color)}`,
               boxShadow: large ? "0 3px 8px rgba(0,0,0,.65)" : undefined,
             }}
           >
@@ -1628,10 +1641,13 @@ function LiveCursors({
             <span
               style={{
                 fontSize: large ? 18 : 11,
-                color: "#fff",
+                color: cursorForeground(c.color),
                 fontWeight: large ? 700 : 600,
                 fontFamily: "Inter, sans-serif",
-                textShadow: large ? "0 1px 2px rgba(0,0,0,.8)" : undefined,
+                textShadow:
+                  cursorForeground(c.color) === "#ffffff"
+                    ? "0 1px 2px rgba(0,0,0,.8)"
+                    : "0 1px 1px rgba(255,255,255,.45)",
               }}
             >
               {c.displayName}

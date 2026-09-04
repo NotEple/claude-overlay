@@ -1638,7 +1638,7 @@ export function StudioPanel(props: StudioPanelProps) {
                       `Sender names ${event.target.checked ? "shown" : "hidden"}`,
                     );
                   }}
-                  title="Display the Twitch sender's name beneath each emote"
+                    title="Display the Twitch sender's name above each emote"
                 />
               </label>
               {props.chatEmoteSettings.showNames && (

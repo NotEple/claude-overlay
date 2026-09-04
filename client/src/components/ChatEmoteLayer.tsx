@@ -171,15 +171,6 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
           className="chat-emote-particle"
           style={{ width: settings.size * scale * particle.aspectRatio }}
         >
-          <img
-            src={particle.imageUrl}
-            alt={particle.name}
-            draggable={false}
-            style={{
-              width: settings.size * scale * particle.aspectRatio,
-              height: settings.size * scale,
-            }}
-          />
           {settings.showNames && (
             <span
               style={{
@@ -193,6 +184,15 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
               {particle.sender}
             </span>
           )}
+          <img
+            src={particle.imageUrl}
+            alt={particle.name}
+            draggable={false}
+            style={{
+              width: settings.size * scale * particle.aspectRatio,
+              height: settings.size * scale,
+            }}
+          />
         </div>
       ))}
     </div>
