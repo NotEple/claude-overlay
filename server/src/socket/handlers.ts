@@ -41,7 +41,7 @@ export function registerSocketHandlers(
   onMediaEnded?: (id: string) => void,
   onSoundEnded?: (playbackId: string) => void,
 ) {
-  const user = (socket as any).jwtUser as AuthUser | undefined;
+  const user = socket.data.jwtUser as AuthUser | undefined;
   const isOverlay = socket.handshake.query.mode === "overlay";
   socket.join(isOverlay ? "overlay" : "dashboard");
   const { canvasState, drawStrokes } = store;
@@ -125,13 +125,18 @@ export function registerSocketHandlers(
     const element = canvasState.elements.find((candidate) => candidate.id === id);
     if (!element) return;
     if (element.locked && Object.keys(changes).some((key) => ["x", "y", "width", "height", "rotation", "scaleX", "scaleY", "dvdEnabled", "dvdStartedAt", "dvdStartX", "dvdStartY", "dvdVelocityX", "dvdVelocityY"].includes(key))) return;
+    const normalizedChanges = {
+      ...changes,
+      ...(changes.flyStartedAt ? { flyStartedAt: Date.now() } : {}),
+      ...(changes.effectStartedAt ? { effectStartedAt: Date.now() } : {}),
+    };
     record(`update:${id}`, `updated ${element.type}`);
     if ("groupId" in changes && changes.groupId === null) {
       delete element.groupId;
       delete element.groupName;
     }
-    Object.assign(element, changes);
-    io.emit("element:updated", { id, changes });
+    Object.assign(element, normalizedChanges);
+    io.emit("element:updated", { id, changes: normalizedChanges });
   });
 
   socket.on("element:remove", ({ id }) => {
@@ -189,14 +194,19 @@ export function registerSocketHandlers(
   socket.on("draw:stroke", (stroke) => {
     if (!validStroke(stroke) || drawStrokes.length >= MAX_STROKES) return;
     if (drawStrokes.some((existing) => existing.id === stroke.id)) return;
+    checkpoint(store);
     record(`stroke:${stroke.id}`, "added a drawing stroke");
     drawStrokes.push(stroke);
     socket.broadcast.emit("draw:stroke", stroke);
+    io.to("dashboard").emit("history:status", historyStatus(store));
   });
   socket.on("draw:clear", () => {
-    if (drawStrokes.length) record("draw:clear", "cleared the drawing");
+    if (!drawStrokes.length) return;
+    checkpoint(store);
+    record("draw:clear", "cleared the drawing");
     drawStrokes.length = 0;
     socket.broadcast.emit("draw:clear");
+    io.to("dashboard").emit("history:status", historyStatus(store));
   });
   socket.on("draw:live", (data) => {
     if (!validLiveStroke(data)) return;
@@ -209,7 +219,7 @@ export function registerSocketHandlers(
       typeof settings.nameBackgroundEnabled !== "boolean" ||
       typeof settings.nameBackgroundColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settings.nameBackgroundColor) ||
       !Number.isFinite(settings.nameFontSize) || settings.nameFontSize < 9 || settings.nameFontSize > 32 ||
-      !["walls", "floor"].includes(settings.motion) ||
+      !["walls", "floor", "parade"].includes(settings.motion) ||
       !Number.isFinite(settings.gravity) || settings.gravity < 100 || settings.gravity > 2400 ||
       !Number.isFinite(settings.size) || settings.size < 24 || settings.size > 100 ||
       !Number.isFinite(settings.speed) || settings.speed < 40 || settings.speed > 600 ||
@@ -365,5 +375,7 @@ function validLiveStroke(data: Omit<LiveDrawStroke, "userId">): boolean {
     && data.points.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))
     && typeof data.color === "string" && data.color.length <= 32
     && Number.isFinite(data.size) && data.size >= 0 && data.size <= 200
-    && typeof data.eraser === "boolean";
+    && typeof data.eraser === "boolean"
+    && (data.tool === undefined || ["pen", "eraser", "line", "arrow", "rectangle", "ellipse"].includes(data.tool))
+    && (data.opacity === undefined || (Number.isFinite(data.opacity) && data.opacity >= 0.05 && data.opacity <= 1));
 }

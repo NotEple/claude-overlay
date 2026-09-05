@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { parseTextSrc } from './CanvasStage';
+import { parseTextSrc } from '../canvas/config';
 
 export interface TextConfig {
   text: string;

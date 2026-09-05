@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { mkdirSync } from "node:fs";
 import { open, unlink } from "node:fs/promises";
 import { requireAuth } from "../middleware/auth.js";
+import { uploadRateLimit } from "../middleware/rateLimits.js";
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? "/tmp/obs-uploads";
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -37,7 +38,7 @@ export function setUploadedMediaHeaders(req: Request, res: Response, next: NextF
   next();
 }
 
-uploadRouter.post("/", requireAuth, (req, res, next) => {
+uploadRouter.post("/", requireAuth, uploadRateLimit, (req, res, next) => {
   upload.single("file")(req, res, (error) => {
     if (!error) return next();
     if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {

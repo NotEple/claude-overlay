@@ -21,6 +21,7 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
   const particlesRef = useRef<Particle[]>([]);
   const nodesRef = useRef(new Map<string, HTMLDivElement>());
   const settingsRef = useRef(settings);
+  const spawnQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [particles, setParticles] = useState<Particle[]>([]);
 
   useEffect(() => {
@@ -36,10 +37,18 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
   }, [preview, settings.enabled]);
 
   useEffect(() => {
-    const activeSettings = settingsRef.current;
-    if (!spawn || (!activeSettings.enabled && !preview)) return;
-    const image = new Image();
-    image.onload = () => {
+    if (!spawn) return;
+    const queuedSpawn = spawn;
+    // Resolve image dimensions serially so a slower CDN response cannot let a
+    // later chat message jump ahead in parade mode.
+    spawnQueueRef.current = spawnQueueRef.current.then(() => new Promise<void>((resolve) => {
+      const activeSettings = settingsRef.current;
+      if (!activeSettings.enabled && !preview) {
+        resolve();
+        return;
+      }
+      const image = new Image();
+      image.onload = () => {
       const container = containerRef.current;
       const width = container?.clientWidth || 1920;
       const height = container?.clientHeight || 1080;
@@ -58,7 +67,16 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
       let y: number;
       let vx: number;
       let vy: number;
-      if (activeSettings.motion === "floor") {
+      if (activeSettings.motion === "parade") {
+        const rightmost = particlesRef.current.reduce((edge, particle) => {
+          const width = size * particle.aspectRatio;
+          return Math.max(edge, particle.x + width);
+        }, width);
+        x = rightmost + (particlesRef.current.length ? 12 * scale : 0);
+        y = height - size - labelHeight;
+        vx = -speed;
+        vy = 0;
+      } else if (activeSettings.motion === "floor") {
         x = Math.random() * Math.max(1, width - particleWidth);
         y = height * (0.08 + Math.random() * 0.25);
         vx = (Math.random() < 0.5 ? -1 : 1) * speed * (0.45 + Math.random() * 0.55);
@@ -79,7 +97,7 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
         vy = Math.sin(angle) * speed;
       }
       const particle: Particle = {
-        ...spawn,
+        ...queuedSpawn,
         x,
         y,
         vx,
@@ -87,9 +105,14 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
         bornAt: performance.now(),
         aspectRatio,
       };
-      setParticles((current) => [...current, particle].slice(-activeSettings.maxVisible));
-    };
-    image.src = spawn.imageUrl;
+      setParticles((current) => activeSettings.motion === "parade"
+        ? (current.length >= activeSettings.maxVisible ? current : [...current, particle])
+        : [...current, particle].slice(-activeSettings.maxVisible));
+      resolve();
+      };
+      image.onerror = () => resolve();
+      image.src = queuedSpawn.imageUrl;
+    }));
   }, [preview, spawn]);
 
   useEffect(() => {
@@ -119,6 +142,16 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
       for (const particle of particlesRef.current) {
         const particleWidth = size * particle.aspectRatio;
         const floorY = height - size - labelHeight;
+        if (settings.motion === "parade") {
+          particle.vx = -settings.speed * scale;
+          particle.vy = 0;
+          particle.x += particle.vx * dt;
+          particle.y = floorY;
+          const node = nodesRef.current.get(particle.id);
+          if (node) node.style.transform = `translate3d(${particle.x}px, ${particle.y}px, 0)`;
+          if (particle.x + particleWidth < 0) expired.push(particle.id);
+          continue;
+        }
         const restingOnFloor =
           settings.motion === "floor" &&
           particle.y >= floorY - 0.5 &&
@@ -156,7 +189,7 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
     };
     frame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frame);
-  }, [preview, settings.gravity, settings.lifetimeSeconds, settings.motion, settings.nameFontSize, settings.showNames, settings.size]);
+  }, [preview, settings.gravity, settings.lifetimeSeconds, settings.motion, settings.nameFontSize, settings.showNames, settings.size, settings.speed]);
 
   const scale = preview ? 0.42 : 1;
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   AudioLines,
   Headphones,
@@ -12,10 +12,10 @@ import {
   X,
   BellRing,
   Link2,
+  Search,
 } from "lucide-react";
 import type {
   CanvasElement,
-  DvdCelebrationSettings,
   OverlayTrigger,
   StudioState,
   TriggerPlacement,
@@ -32,6 +32,8 @@ import { authHeaders } from "../hooks/useAuth";
 import { useToast } from "./ToastProvider";
 import { ChatEmoteLayer } from "./ChatEmoteLayer";
 import previewEmote from "../assets/vicksyW.png";
+import { useTwitchEvents } from "../hooks/useTwitchEvents";
+import { useConfirm } from "./ConfirmProvider";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 
@@ -41,8 +43,7 @@ type Tab =
   | "sounds"
   | "triggers"
   | "events"
-  | "emotes"
-  | "effects";
+  | "emotes";
 
 interface StudioPanelProps {
   studio: StudioState;
@@ -72,10 +73,6 @@ interface StudioPanelProps {
     direction: FlyDirection,
     durationSeconds: number,
   ) => boolean;
-  dvdCelebrationSettings: DvdCelebrationSettings;
-  dvdSoundUploading: boolean;
-  onDvdSettingsChange: (settings: DvdCelebrationSettings) => void;
-  onDvdSoundUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   chatEmoteSettings: ChatEmoteSettings;
   onChatEmoteSettingsChange: (settings: ChatEmoteSettings) => void;
 }
@@ -136,6 +133,7 @@ const rowStyle = {
 
 export function StudioPanel(props: StudioPanelProps) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>("sounds");
   const [name, setName] = useState("");
   const [soundUrl, setSoundUrl] = useState("");
@@ -167,55 +165,10 @@ export function StudioPanel(props: StudioPanelProps) {
   const [uploading, setUploading] = useState(false);
   const [emotePreview, setEmotePreview] = useState<ChatEmoteSpawn | null>(null);
   const [blacklistName, setBlacklistName] = useState("");
-  const dvdPreviewAudio = useRef<HTMLAudioElement | null>(null);
+  const [listSearch, setListSearch] = useState("");
   const pendingStepBeforeChainEdit = useRef<TriggerStep | null>(null);
-  const [eventStatus, setEventStatus] = useState<{
-    configured: boolean;
-    channels: Array<{
-      channel: string;
-      connected: boolean;
-      displayName?: string;
-      scopes: string[];
-    }>;
-  } | null>(null);
-  const loadEventStatus = async (showError = false) => {
-    try {
-      const response = await fetch(`${SERVER_URL}/events/status`, {
-        headers: authHeaders(),
-      });
-      if (!response.ok) throw new Error("Could not load Twitch Events status");
-      setEventStatus(await response.json());
-    } catch {
-      if (showError) toast.error("Could not refresh Twitch Events status");
-    }
-  };
-  useEffect(() => {
-    if (tab !== "events") return;
-    void loadEventStatus(true);
-    const refresh = () => void loadEventStatus();
-    const interval = window.setInterval(refresh, 5_000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [tab]);
-
-  const connectEvents = async (channel: string) => {
-    try {
-      const response = await fetch(`${SERVER_URL}/auth/events/start/${channel}`, {
-        headers: authHeaders(),
-      });
-      const data = (await response.json()) as { url?: string; error?: string };
-      if (!response.ok || !data.url)
-        return toast.error(data.error ?? "Could not start Twitch authorization");
-      window.location.href = data.url;
-    } catch {
-      toast.error("Could not reach the server to start Twitch authorization");
-    }
-  };
+  const twitchEvents = useTwitchEvents(tab === "events");
+  const eventStatus = twitchEvents.status;
 
   const currentTriggerStep = (): TriggerStep => ({
     action: triggerAction,
@@ -466,43 +419,11 @@ export function StudioPanel(props: StudioPanelProps) {
     loadTriggerStep(step);
   };
 
-  const previewDvdSound = () => {
-    dvdPreviewAudio.current?.pause();
-    const volume = props.dvdCelebrationSettings.volume;
-    const url = props.dvdCelebrationSettings.soundUrl;
-    if (url) {
-      const audio = new Audio(url);
-      audio.volume = volume;
-      dvdPreviewAudio.current = audio;
-      void audio.play().then(
-        () => toast.info("Previewing DVD corner sound locally"),
-        () => toast.error("DVD sound preview could not be played"),
-      );
-      return;
-    }
-    try {
-      const context = new AudioContext();
-      [659.25, 783.99, 1046.5].forEach((frequency, index) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        const start = context.currentTime + index * 0.11;
-        oscillator.type = "triangle";
-        oscillator.frequency.value = frequency;
-        gain.gain.setValueAtTime(Math.max(0.001, volume * 0.22), start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
-        oscillator.connect(gain).connect(context.destination);
-        oscillator.start(start);
-        oscillator.stop(start + 0.21);
-      });
-      toast.info("Previewing built-in DVD corner chime locally");
-    } catch {
-      toast.error("DVD sound preview could not be played");
-    }
-  };
-
   const currentStepIsFirst =
     editingChainIndex === 0 ||
     (editingChainIndex === null && chainedSteps.length === 0);
+  const selectedTargetElement = props.elements.find((element) => element.id === targetId);
+  const selectedTargetSound = props.studio.sounds.find((sound) => sound.id === targetId);
 
   return (
     <aside className="studio-panel">
@@ -524,7 +445,10 @@ export function StudioPanel(props: StudioPanelProps) {
           <button
             key={id}
             className={tab === id ? "active" : ""}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setTab(id);
+              setListSearch("");
+            }}
             title={`Open ${label}`}
           >
             <Icon size={15} />
@@ -557,21 +481,24 @@ export function StudioPanel(props: StudioPanelProps) {
                 key={item.id}
                 name={item.name}
                 detail={new Date(item.updatedAt).toLocaleString()}
-                onPrimary={() => {
-                  if (
-                    window.confirm(
-                      `Replace the current canvas with “${item.name}”? You can undo this action.`,
-                    )
-                  ) {
+                onPrimary={async () => {
+                  if (await confirm({
+                    title: `Load “${item.name}”?`,
+                    message: "This replaces the current canvas and drawing. You can restore the previous state with Undo.",
+                    confirmLabel: "Load scene",
+                  })) {
                     props.onLoadScene(item.id);
                     toast.success(`Scene “${item.name}” loaded`);
                   }
                 }}
                 primary="Load"
-                onDelete={() => {
-                  if (
-                    window.confirm(`Delete the saved scene “${item.name}”?`)
-                  ) {
+                onDelete={async () => {
+                  if (await confirm({
+                    title: `Delete “${item.name}”?`,
+                    message: "This permanently removes the saved scene.",
+                    confirmLabel: "Delete scene",
+                    danger: true,
+                  })) {
                     props.onDeleteScene(item.id);
                     toast.success(`Scene “${item.name}” deleted`);
                   }
@@ -672,7 +599,26 @@ export function StudioPanel(props: StudioPanelProps) {
                 />
               </label>
             </div>
-            {props.studio.sounds.map((item) => (
+            {props.studio.sounds.length > 0 && (
+              <label className="studio-search">
+                <Search size={13} aria-hidden="true" />
+                <input
+                  value={listSearch}
+                  onChange={(event) => setListSearch(event.target.value)}
+                  placeholder="Search sounds…"
+                  aria-label="Search sounds"
+                />
+              </label>
+            )}
+            {props.studio.sounds.length === 0 && (
+              <div className="studio-empty-state">
+                <strong>No sounds yet</strong>
+                <span>Add a Myinstants link or upload an audio file to create your Soundboard.</span>
+              </div>
+            )}
+            {props.studio.sounds
+              .filter((item) => item.name.toLowerCase().includes(listSearch.trim().toLowerCase()))
+              .map((item) => (
               <div key={item.id} className="soundboard-item">
                 <div style={{ minWidth: 0 }}>
                   <strong style={{ fontSize: 12, display: "block" }}>
@@ -723,7 +669,13 @@ export function StudioPanel(props: StudioPanelProps) {
                   </button>
                   <button
                     className="ui-button ui-button--compact ui-danger soundboard-action"
-                    onClick={() => {
+                    onClick={async () => {
+                      if (!await confirm({
+                        title: `Delete “${item.name}”?`,
+                        message: "Commands using this sound will keep a missing target until they are edited.",
+                        confirmLabel: "Delete sound",
+                        danger: true,
+                      })) return;
                       props.onDeleteSound(item.id);
                       toast.success(`Sound “${item.name}” deleted`);
                     }}
@@ -881,6 +833,28 @@ export function StudioPanel(props: StudioPanelProps) {
                   </option>
                 ))}
               </select>
+            )}
+            {targetId && (selectedTargetElement || selectedTargetSound) && (
+              <div className="trigger-target-summary">
+                {selectedTargetElement && ["image", "gif"].includes(selectedTargetElement.type) ? (
+                  <img src={selectedTargetElement.src} alt="" />
+                ) : (
+                  <span className="trigger-target-summary__icon">
+                    {selectedTargetSound ? <AudioLines size={15} /> : <Play size={15} />}
+                  </span>
+                )}
+                <div>
+                  <strong>
+                    {selectedTargetSound?.name || selectedTargetElement?.displayName ||
+                      (selectedTargetElement ? getFileLabel(selectedTargetElement.src) : "Selected target")}
+                  </strong>
+                  <span>
+                    {selectedTargetSound
+                      ? "Soundboard clip"
+                      : `${selectedTargetElement?.type} layer · ${selectedTargetElement?.visible ? "visible" : "hidden on overlay"}`}
+                  </span>
+                </div>
+              </div>
             )}
             {triggerAction === "send-chat" && (
               <div className="chat-message-editor">
@@ -1109,9 +1083,17 @@ export function StudioPanel(props: StudioPanelProps) {
                     className="command-chain__step"
                     key={`${index}-${step.action}`}
                   >
-                    <span>
-                      {index + 1}. {triggerActionLabel(step.action)} ·{" "}
-                      {triggerTimingLabel(step, index)}
+                    <span className="command-chain__description">
+                      <b>{index + 1}</b>
+                      <span>
+                        <strong>{triggerActionLabel(step.action)}</strong>
+                        <small>
+                          {triggerTimingLabel(step, index)}
+                          {step.targetId
+                            ? ` · ${props.studio.sounds.find((sound) => sound.id === step.targetId)?.name || props.elements.find((element) => element.id === step.targetId)?.displayName || "media target"}`
+                            : ""}
+                        </small>
+                      </span>
                     </span>
                     <div className="command-chain__actions">
                       <button
@@ -1260,11 +1242,35 @@ export function StudioPanel(props: StudioPanelProps) {
                 <X size={14} /> Cancel editing
               </button>
             )}
+            {props.studio.triggers.some((item) =>
+              tab === "events" ? item.event !== "chat-command" : item.event === "chat-command",
+            ) && (
+              <label className="studio-search">
+                <Search size={13} aria-hidden="true" />
+                <input
+                  value={listSearch}
+                  onChange={(event) => setListSearch(event.target.value)}
+                  placeholder={tab === "events" ? "Search event actions…" : "Search commands…"}
+                  aria-label={tab === "events" ? "Search event actions" : "Search commands"}
+                />
+              </label>
+            )}
+            {!props.studio.triggers.some((item) =>
+              tab === "events" ? item.event !== "chat-command" : item.event === "chat-command",
+            ) && (
+              <div className="studio-empty-state">
+                <strong>{tab === "events" ? "No event actions yet" : "No chat commands yet"}</strong>
+                <span>{tab === "events" ? "Choose an event and action above, then save it." : "Name a command, choose what it should do, then add it."}</span>
+              </div>
+            )}
             {props.studio.triggers
               .filter((item) =>
-                tab === "events"
+                (tab === "events"
                   ? item.event !== "chat-command"
-                  : item.event === "chat-command",
+                  : item.event === "chat-command") &&
+                [item.name, item.match ?? "", item.event].some((value) =>
+                  value.toLowerCase().includes(listSearch.trim().toLowerCase()),
+                ),
               )
               .map((item) => (
                 <Item
@@ -1280,148 +1286,18 @@ export function StudioPanel(props: StudioPanelProps) {
                   }}
                   primary={item.enabled ? "Active" : "Disabled"}
                   active={item.enabled}
-                  onDelete={() => {
+                  onDelete={async () => {
+                    if (!await confirm({
+                      title: `Delete “${item.name}”?`,
+                      message: "This permanently removes the saved command or event action.",
+                      confirmLabel: "Delete action",
+                      danger: true,
+                    })) return;
                     props.onDeleteTrigger(item.id);
                     toast.success(`Command “${item.name}” deleted`);
                   }}
                 />
               ))}
-          </Section>
-        )}
-        {tab === "effects" && (
-          <Section
-            title="Overlay effects"
-            description="Configure global effects shared by every DVD-enabled element."
-          >
-            <div style={{ ...rowStyle, display: "grid", gap: 10 }}>
-              <div className="dvd-sound-status">
-                <div>
-                  <span>Current sound</span>
-                  <strong
-                    title={props.dvdCelebrationSettings.soundUrl ?? undefined}
-                  >
-                    {props.dvdCelebrationSettings.soundUrl
-                      ? getFileLabel(props.dvdCelebrationSettings.soundUrl)
-                      : "Built-in three-note chime"}
-                  </strong>
-                </div>
-                <button
-                  type="button"
-                  className="ui-button ui-button--compact soundboard-action"
-                  onClick={previewDvdSound}
-                  title="Preview the current DVD corner sound on this dashboard only"
-                >
-                  <Headphones size={13} /> Preview
-                </button>
-              </div>
-              <label
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "52px 1fr 34px",
-                  alignItems: "center",
-                  gap: 7,
-                  color: "#b6beca",
-                  fontSize: 11,
-                }}
-              >
-                <span>Volume</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={props.dvdCelebrationSettings.volume}
-                  onChange={(event) =>
-                    props.onDvdSettingsChange({
-                      ...props.dvdCelebrationSettings,
-                      volume: Number(event.target.value),
-                    })
-                  }
-                  title="Set the DVD corner celebration sound volume"
-                  style={{ minWidth: 0, accentColor: "var(--accent-border)" }}
-                />
-                <span style={{ textAlign: "right" }}>
-                  {Math.round(props.dvdCelebrationSettings.volume * 100)}%
-                </span>
-              </label>
-              <label
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "52px 1fr",
-                  alignItems: "center",
-                  gap: 7,
-                  color: "#b6beca",
-                  fontSize: 11,
-                }}
-              >
-                <span>Counter</span>
-                <select
-                  style={fieldStyle}
-                  value={props.dvdCelebrationSettings.counterPosition}
-                  onChange={(event) => {
-                    const counterPosition = event.target
-                      .value as DvdCelebrationSettings["counterPosition"];
-                    props.onDvdSettingsChange({
-                      ...props.dvdCelebrationSettings,
-                      counterPosition,
-                    });
-                    toast.success(
-                      `DVD counter moved to ${event.target.options[event.target.selectedIndex].text.toLowerCase()}`,
-                    );
-                  }}
-                  title="Choose where the DVD corner counter appears on overlay"
-                >
-                  <option value="top-left">Top left</option>
-                  <option value="top-center">Top center</option>
-                  <option value="top-right">Top right</option>
-                  <option value="bottom-left">Bottom left</option>
-                  <option value="bottom-center">Bottom center</option>
-                  <option value="bottom-right">Bottom right</option>
-                </select>
-              </label>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 6,
-                }}
-              >
-                <label
-                  className="ui-button ui-button--compact soundboard-action"
-                  title="Upload an audio file for DVD corner celebrations"
-                  style={{
-                    cursor: props.dvdSoundUploading ? "wait" : "pointer",
-                  }}
-                >
-                  {props.dvdSoundUploading
-                    ? "Uploading…"
-                    : props.dvdCelebrationSettings.soundUrl
-                      ? "Replace sound"
-                      : "Upload sound"}
-                  <input
-                    type="file"
-                    accept="audio/mpeg,audio/wav,audio/ogg,audio/webm"
-                    disabled={props.dvdSoundUploading}
-                    onChange={props.onDvdSoundUpload}
-                    hidden
-                  />
-                </label>
-                <button
-                  className="ui-button ui-button--compact soundboard-action"
-                  onClick={() => {
-                    props.onDvdSettingsChange({
-                      ...props.dvdCelebrationSettings,
-                      soundUrl: null,
-                    });
-                    toast.success("Using the built-in DVD corner chime");
-                  }}
-                  disabled={!props.dvdCelebrationSettings.soundUrl}
-                  title="Use the built-in three-note corner chime"
-                >
-                  Built-in chime
-                </button>
-              </div>
-            </div>
           </Section>
         )}
         {tab === "events" && (
@@ -1467,7 +1343,7 @@ export function StudioPanel(props: StudioPanelProps) {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button
                       className="ui-button studio-primary"
-                      onClick={() => void connectEvents(channel)}
+                      onClick={() => void twitchEvents.connect(channel)}
                       title={`Authorize event access using the ${channel} Twitch account`}
                     >
                       <Link2 size={13} />{" "}
@@ -1480,25 +1356,8 @@ export function StudioPanel(props: StudioPanelProps) {
                     {status?.connected && (
                       <button
                         className="ui-button ui-danger"
-                        onClick={async () => {
-                          if (
-                            !window.confirm(
-                              `Disconnect ${channel} event access?`,
-                            )
-                          )
-                            return;
-                          try {
-                            const response = await fetch(`${SERVER_URL}/events/${channel}`, {
-                              method: "DELETE",
-                              headers: authHeaders(),
-                            });
-                            if (!response.ok) throw new Error();
-                            toast.success(`${channel} event access disconnected`);
-                            void loadEventStatus();
-                          } catch {
-                            toast.error(`Could not disconnect ${channel} event access`);
-                          }
-                        }}
+                        onClick={() => void twitchEvents.disconnect(channel)}
+                        title={`Disconnect ${channel} Twitch event access`}
                       >
                         Disconnect
                       </button>
@@ -1531,26 +1390,7 @@ export function StudioPanel(props: StudioPanelProps) {
                         className="ui-button ui-button--compact"
                         disabled={!status?.connected}
                         title={`Run a local simulated ${type} event`}
-                        onClick={async () => {
-                          try {
-                            const response = await fetch(
-                              `${SERVER_URL}/events/${channel}/test`,
-                              {
-                                method: "POST",
-                                headers: {
-                                  ...authHeaders(),
-                                  "Content-Type": "application/json",
-                                },
-                                body: JSON.stringify({ type }),
-                              },
-                            );
-                            response.ok
-                              ? toast.success(`Simulated ${type} event sent`)
-                              : toast.error(`Could not simulate the ${type} event`);
-                          } catch {
-                            toast.error(`Could not reach the server to test the ${type} event`);
-                          }
-                        }}
+                        onClick={() => void twitchEvents.test(channel, type)}
                       >
                         Test {type}
                       </button>
@@ -1564,7 +1404,7 @@ export function StudioPanel(props: StudioPanelProps) {
         {tab === "emotes" && (
           <Section
             title="Chat emotes"
-            description="Bounce 7TV and Twitch emotes around OBS without adding them to Layers or storing their images."
+            description="Animate 7TV and Twitch emotes on OBS without adding them to Layers or storing their images."
           >
             <button
               type="button"
@@ -1618,9 +1458,9 @@ export function StudioPanel(props: StudioPanelProps) {
                 });
                 toast.info("Playing a dashboard-only emote preview");
               }}
-              title="Preview the bounce movement locally without showing anything on OBS"
+              title="Preview the selected emote movement locally without showing anything on OBS"
             >
-              <Play size={13} /> Preview bounce
+              <Play size={13} /> Preview movement
             </button>
             <div className="chat-emote-card">
               <strong className="chat-emote-card__title">Behavior</strong>
@@ -1701,9 +1541,9 @@ export function StudioPanel(props: StudioPanelProps) {
                 <span>Movement</span>
                 <span
                   className="chat-emote-motion-toggle"
-                  title="Choose gravity-based floor bounces or continuous wall-to-wall movement"
+                  title="Choose a bottom parade, gravity-based floor bounces, or continuous wall-to-wall movement"
                 >
-                  {(["floor", "walls"] as const).map((motion) => (
+                  {(["parade", "floor", "walls"] as const).map((motion) => (
                     <button
                       key={motion}
                       type="button"
@@ -1720,18 +1560,22 @@ export function StudioPanel(props: StudioPanelProps) {
                           motion,
                         });
                         toast.success(
-                          motion === "floor"
-                            ? "Using floor bounce physics"
-                            : "Using wall-to-wall bounce",
+                          motion === "parade"
+                            ? "Emotes will parade along the bottom in chat order"
+                            : motion === "floor"
+                              ? "Using floor bounce physics"
+                              : "Using wall-to-wall bounce",
                         );
                       }}
                       title={
-                        motion === "floor"
-                          ? "Use gravity and floor-impact physics"
-                          : "Bounce continuously between all screen edges"
+                        motion === "parade"
+                          ? "Slide emotes right-to-left along the bottom in the order chat sends them"
+                          : motion === "floor"
+                            ? "Use gravity and floor-impact physics"
+                            : "Bounce continuously between all screen edges"
                       }
                     >
-                      {motion === "floor" ? "Floor" : "Walls"}
+                      {motion === "parade" ? "Parade" : motion === "floor" ? "Floor" : "Walls"}
                     </button>
                   ))}
                 </span>

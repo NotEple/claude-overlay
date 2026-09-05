@@ -36,9 +36,14 @@ export interface CanvasElement {
   flyFromY?: number;
   flyToX?: number;
   flyToY?: number;
+  effectAnimation?: ElementEffectAnimation;
+  effectId?: string;
+  effectStartedAt?: number;
+  effectDurationMs?: number;
 }
 
 export type ElementAnimation = 'none' | 'fade' | 'pop' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'spin';
+export type ElementEffectAnimation = 'pop' | 'pulse' | 'spin' | 'shake';
 export interface SavedScene { id: string; name: string; elements: CanvasElement[]; strokes: DrawStroke[]; updatedAt: string; }
 export interface ElementPreset { id: string; name: string; elements: CanvasElement[]; createdAt: string; }
 export interface SoundboardItem { id: string; name: string; url: string; volume: number; }
@@ -86,7 +91,7 @@ export interface ChatEmoteSettings {
   nameBackgroundEnabled: boolean;
   nameBackgroundColor: string;
   nameFontSize: number;
-  motion: "walls" | "floor";
+  motion: "walls" | "floor" | "parade";
   gravity: number;
   size: number;
   speed: number;
@@ -139,6 +144,9 @@ export interface DrawStroke {
   eraser: boolean;
   fillX?: number;
   fillY?: number;
+  tool?: "pen" | "eraser" | "fill" | "line" | "arrow" | "rectangle" | "ellipse";
+  opacity?: number;
+  fillTolerance?: number;
 }
 
 export interface LiveDrawStroke {
@@ -147,6 +155,8 @@ export interface LiveDrawStroke {
   color: string;
   size: number;
   eraser: boolean;
+  tool?: "pen" | "eraser" | "line" | "arrow" | "rectangle" | "ellipse";
+  opacity?: number;
 }
 
 export interface ServerToClientEvents {

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { externalLookupRateLimit } from "../middleware/rateLimits.js";
 
 const directPath = /^\/media\/sounds\/[a-zA-Z0-9_.%-]+\.mp3$/i;
 const pagePath = /^\/(?:[a-z]{2}\/)?instant\/[a-zA-Z0-9_-]+\/?$/;
@@ -7,7 +8,7 @@ const maxHtmlBytes = 512 * 1024;
 
 export const myinstantsRouter = Router();
 
-myinstantsRouter.post("/resolve", requireAuth, async (req, res) => {
+myinstantsRouter.post("/resolve", requireAuth, externalLookupRateLimit, async (req, res) => {
   try {
     const submitted = new URL(String(req.body?.url ?? ""));
     if (submitted.protocol !== "https:" || !["myinstants.com", "www.myinstants.com"].includes(submitted.hostname)) {

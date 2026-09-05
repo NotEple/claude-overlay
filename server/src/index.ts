@@ -4,7 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import { authRouter, getUserFromToken } from "./auth/routes.js";
-import { whitelistRouter } from "./auth/whitelist.js";
+import { createWhitelistRouter } from "./auth/whitelist.js";
 import { canvasStore } from "./state/canvasStore.js";
 import { registerSocketHandlers, type ActiveUser } from "./socket/handlers.js";
 import { setUploadedMediaHeaders, uploadRouter, UPLOAD_DIR } from "./uploads/routes.js";
@@ -331,16 +331,7 @@ function flyElement(
 app.get("/ping", (_, res) => res.sendStatus(200));
 app.use("/auth", authRouter);
 
-// Inject io into whitelist router so it can kick revoked users
-app.use(
-  "/whitelist",
-  (req, _res, next) => {
-    (req as any).io = io;
-    (req as any).activeUsers = activeUsers;
-    next();
-  },
-  whitelistRouter,
-);
+app.use("/whitelist", createWhitelistRouter(io, activeUsers));
 
 app.use("/upload", uploadRouter);
 app.use("/myinstants", myinstantsRouter);
@@ -356,7 +347,7 @@ io.use((socket, next) => {
   if (token) {
     const authorizedUser = getUserFromToken(token);
     if (authorizedUser) {
-      (socket as any).jwtUser = authorizedUser;
+      socket.data.jwtUser = authorizedUser;
       return next();
     }
   }

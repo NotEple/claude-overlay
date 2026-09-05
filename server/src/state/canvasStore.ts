@@ -38,7 +38,9 @@ export const canvasStore: CanvasStore = {
         ? stored!.nameBackgroundColor
         : "#08080a",
       nameFontSize: Math.min(32, Math.max(9, stored?.nameFontSize ?? 12)),
-      motion: stored?.motion === "walls" ? "walls" as const : "floor" as const,
+      motion: (["walls", "floor", "parade"] as const).includes(stored?.motion as any)
+        ? stored!.motion
+        : "floor",
       gravity: Math.min(2400, Math.max(100, stored?.gravity ?? 900)),
       size: Math.min(100, Math.max(24, stored?.size ?? 40)),
       speed: stored?.speed ?? 180,

@@ -1,25 +1,31 @@
 import { useEffect } from "react";
 import "./App.css";
 import { useAuth } from "./hooks/useAuth";
-import { Dashboard, customAccentVariables } from "./views/Dashboard";
+import { Dashboard } from "./views/Dashboard";
 import { Overlay } from "./views/Overlay";
 import { LoginPage } from "./views/LoginPage";
 import { ToastProvider, useToast } from "./components/ToastProvider";
 import vicksySpin from "./assets/vicksySpin.gif";
 import TileController from "./components/TileController";
+import { customAccentVariables, loadStoredAccent, loadStoredTheme } from "./theme";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 export default function App() {
   if (window.location.pathname === "/overlay") {
     return (
       <ToastProvider>
-        <TileController channel="vicksy" />
-        <Overlay />
+        <ErrorBoundary>
+          <TileController channel="vicksy" />
+          <Overlay />
+        </ErrorBoundary>
       </ToastProvider>
     );
   }
   return (
     <ToastProvider>
-      <DashboardApp />
+      <ErrorBoundary>
+        <DashboardApp />
+      </ErrorBoundary>
     </ToastProvider>
   );
 }
@@ -30,9 +36,8 @@ function DashboardApp() {
   const searchParams = new URLSearchParams(window.location.search);
   const error = searchParams.get("error");
   const previewLoading = searchParams.get("preview") === "loading";
-  const savedTheme = localStorage.getItem("dashboard_theme");
-  const theme = savedTheme === "custom" || savedTheme === "indigo" ? "custom" : "fox";
-  const customAccent = localStorage.getItem("dashboard_custom_accent") ?? "#4f46e5";
+  const theme = loadStoredTheme();
+  const customAccent = loadStoredAccent();
   const themedScreen = (screen: React.ReactNode) => (
     <div
       data-theme={theme}

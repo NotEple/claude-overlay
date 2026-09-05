@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { CheckCircle2, CircleAlert, Info, X } from "lucide-react";
+import { TooltipProvider } from "./TooltipProvider";
+import { ConfirmProvider } from "./ConfirmProvider";
 
 type ToastKind = "success" | "error" | "info";
 interface ToastItem {
@@ -57,7 +59,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   return (
     <ToastContext.Provider value={api}>
-      {children}
+      <ConfirmProvider>
+        <TooltipProvider>{children}</TooltipProvider>
+      </ConfirmProvider>
       <div className="toast-region" role="region" aria-label="Notifications">
         {toasts.map((toast) => {
           const Icon =

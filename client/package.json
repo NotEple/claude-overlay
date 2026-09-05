@@ -4,19 +4,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "typecheck": "tsc -b",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "konva": "^9.3.3",
     "lucide-react": "^1.21.0",
-    "path": "^0.12.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-konva": "^18.2.10",
-    "socket.io-client": "^4.7.2",
-    "use-image": "^1.1.1"
+    "socket.io-client": "^4.7.2"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

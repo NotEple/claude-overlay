@@ -9,6 +9,7 @@ import {
 } from "./twitch.js";
 import { getWhitelistEntry } from "../db/index.js";
 import { signToken, verifyToken } from "./jwt.js";
+import { loginRateLimit } from "../middleware/rateLimits.js";
 
 const OWNER = (process.env.OWNER_TWITCH_USERNAME ?? "vicksy").toLowerCase();
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
@@ -31,8 +32,8 @@ export interface AuthUser {
   isAdmin: boolean;
 }
 
-function authorizeTokenUser(tokenUser: any): AuthUser | null {
-  if (!tokenUser || typeof tokenUser.login !== "string") return null;
+function authorizeTokenUser(tokenUser: Record<string, unknown>): AuthUser | null {
+  if (typeof tokenUser.login !== "string") return null;
   const login = tokenUser.login.toLowerCase();
   const isOwner = login === OWNER;
   const whitelistEntry = isOwner ? null : getWhitelistEntry(login);
@@ -67,7 +68,7 @@ function getUserFromRequest(req: Request): AuthUser | null {
 
 export { getUserFromRequest };
 
-authRouter.get("/twitch", (req, res) => {
+authRouter.get("/twitch", loginRateLimit, (_req, res) => {
   const state = randomUUID();
   res.cookie(STATE_COOKIE, state, {
     httpOnly: true,

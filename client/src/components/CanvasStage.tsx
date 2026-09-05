@@ -54,8 +54,10 @@ import {
   Lock,
   Unlock,
   Pencil,
+  Play,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { LiveCursors } from "./LiveCursors";
 import {
   STREAM_W,
   STREAM_H,
@@ -75,19 +77,8 @@ import {
 } from "../canvas/elementTransforms";
 import { createDvdMotion, getDvdPosition } from "../canvas/dvdMotion";
 import { DvdCelebrationControls } from "./DvdCelebrationControls";
-
-export {
-  STREAM_W,
-  STREAM_H,
-  WORKSPACE_W,
-  WORKSPACE_H,
-  STREAM_OFFSET_X,
-  STREAM_OFFSET_Y,
-  SPAWN_X,
-  SPAWN_Y,
-  parseTextSrc,
-  getFileLabel,
-} from "../canvas/config";
+import { useToast } from "./ToastProvider";
+import { randomUUID } from "../utils";
 
 /** Renders a Lucide icon to an SVG string for use in imperatively-built DOM nodes. */
 function iconHTML(Icon: LucideIcon, size = 14): string {
@@ -103,6 +94,45 @@ function animationFrames(name: CanvasElement['enterAnimation']): Keyframe[] {
     spin: { opacity: 0, transform: 'scale(.65) rotate(-180deg)' }, none: end,
   };
   return [starts[name ?? 'fade'] ?? starts.fade, end];
+}
+
+function effectAnimationFrames(name: CanvasElement['effectAnimation']): Keyframe[] {
+  if (name === 'pulse') return [
+    { transform: 'scale(1)' },
+    { transform: 'scale(1.18)' },
+    { transform: 'scale(1)' },
+  ];
+  if (name === 'spin') return [
+    { transform: 'rotate(0deg)' },
+    { transform: 'rotate(360deg)' },
+  ];
+  if (name === 'shake') return [
+    { transform: 'translateX(0)' },
+    { transform: 'translateX(-16px) rotate(-2deg)' },
+    { transform: 'translateX(14px) rotate(2deg)' },
+    { transform: 'translateX(-10px) rotate(-1deg)' },
+    { transform: 'translateX(8px) rotate(1deg)' },
+    { transform: 'translateX(0)' },
+  ];
+  return [
+    { opacity: 0, transform: 'scale(.4)' },
+    { opacity: 1, transform: 'scale(1.12)', offset: 0.72 },
+    { opacity: 1, transform: 'scale(1)' },
+  ];
+}
+
+function playRequestedEffect(node: HTMLElement, element: CanvasElement) {
+  if (!element.effectAnimation || !element.effectStartedAt) return;
+  const key = element.effectId ?? `${element.effectAnimation}:${element.effectStartedAt}`;
+  if (node.dataset.effectAnimation === key) return;
+  node.dataset.effectAnimation = key;
+  const duration = Math.max(150, Math.min(10_000, element.effectDurationMs ?? 700));
+  if (Date.now() - element.effectStartedAt > duration + 1500) return;
+  const surface = node.querySelector<HTMLElement>('.element-content') ?? node.firstElementChild as HTMLElement | null;
+  surface?.animate(effectAnimationFrames(element.effectAnimation), {
+    duration,
+    easing: element.effectAnimation === 'shake' ? 'ease-in-out' : 'cubic-bezier(.2,.8,.2,1)',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -901,7 +931,26 @@ export function ElementPanel({
   onDvdSoundUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   footer?: React.ReactNode;
 }) {
+  type SelectedAnimation = "slide-lr" | "slide-rl" | "slide-tb" | "slide-bt" | "pop" | "pulse" | "spin" | "shake";
+  const [layerSearch, setLayerSearch] = useState("");
+  const [selectedAnimation, setSelectedAnimation] = useState<SelectedAnimation>("slide-lr");
+  const [animationDuration, setAnimationDuration] = useState(3);
+  const animationTimersRef = useRef(new Map<string, number>());
+  const toast = useToast();
   const slots = buildSlots(elements);
+  const normalizedSearch = layerSearch.trim().toLowerCase();
+  const visibleSlots = slots
+    .map((slot, originalIndex) => ({ slot, originalIndex }))
+    .filter(({ slot }) => {
+      if (!normalizedSearch) return true;
+      const members = slot.kind === "element" ? [slot.el] : slot.members;
+      const groupName = slot.kind === "group" ? slot.members[0]?.groupName ?? "group" : "";
+      return [groupName, ...members.map((element) =>
+        element.type === "text"
+          ? parseTextSrc(element.src).text
+          : element.displayName || getFileLabel(element.src) || element.type,
+      )].some((value) => value.toLowerCase().includes(normalizedSearch));
+    });
   const icon = (t: string) => {
     const Icon =
       t === "image"
@@ -923,6 +972,75 @@ export function ElementPanel({
     selectedIds.size === 1
       ? elements.find((element) => selectedIds.has(element.id))
       : undefined;
+
+  useEffect(() => () => {
+    for (const timer of animationTimersRef.current.values()) window.clearTimeout(timer);
+  }, []);
+
+  const playSelectedAnimation = () => {
+    if (!selectedElement || !["image", "gif", "video"].includes(selectedElement.type)) return;
+    const durationMs = Math.round(Math.max(0.2, Math.min(10, animationDuration)) * 1000);
+    const existingTimer = animationTimersRef.current.get(selectedElement.id);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    if (["pop", "pulse", "spin", "shake"].includes(selectedAnimation)) {
+      onElementChange(selectedElement.id, {
+        effectAnimation: selectedAnimation as CanvasElement['effectAnimation'],
+        effectId: randomUUID(),
+        effectStartedAt: Date.now(),
+        effectDurationMs: durationMs,
+      });
+      toast.success(`Playing ${selectedAnimation} on ${selectedElement.displayName || getFileLabel(selectedElement.src) || selectedElement.type}`);
+      return;
+    }
+
+    const original = {
+      x: selectedElement.x,
+      y: selectedElement.y,
+      visible: selectedElement.visible,
+    };
+    const horizontal = selectedAnimation === "slide-lr" || selectedAnimation === "slide-rl";
+    const forward = selectedAnimation === "slide-lr" || selectedAnimation === "slide-tb";
+    const laneX = Math.max(STREAM_OFFSET_X, Math.min(STREAM_OFFSET_X + STREAM_W - selectedElement.width, selectedElement.x));
+    const laneY = Math.max(STREAM_OFFSET_Y, Math.min(STREAM_OFFSET_Y + STREAM_H - selectedElement.height, selectedElement.y));
+    const fromX = horizontal
+      ? (forward ? STREAM_OFFSET_X - selectedElement.width : STREAM_OFFSET_X + STREAM_W)
+      : laneX;
+    const toX = horizontal
+      ? (forward ? STREAM_OFFSET_X + STREAM_W : STREAM_OFFSET_X - selectedElement.width)
+      : laneX;
+    const fromY = horizontal
+      ? laneY
+      : (forward ? STREAM_OFFSET_Y - selectedElement.height : STREAM_OFFSET_Y + STREAM_H);
+    const toY = horizontal
+      ? laneY
+      : (forward ? STREAM_OFFSET_Y + STREAM_H : STREAM_OFFSET_Y - selectedElement.height);
+    onElementChange(selectedElement.id, {
+      visible: true,
+      dvdEnabled: false,
+      x: fromX,
+      y: fromY,
+      flyStartedAt: Date.now(),
+      flyDurationMs: durationMs,
+      flyFromX: fromX,
+      flyFromY: fromY,
+      flyToX: toX,
+      flyToY: toY,
+    });
+    const timer = window.setTimeout(() => {
+      onElementChange(selectedElement.id, {
+        ...original,
+        flyStartedAt: 0,
+        flyDurationMs: 0,
+        flyFromX: 0,
+        flyFromY: 0,
+        flyToX: 0,
+        flyToY: 0,
+      });
+      animationTimersRef.current.delete(selectedElement.id);
+    }, durationMs + 50);
+    animationTimersRef.current.set(selectedElement.id, timer);
+    toast.success("Media slide started on the dashboard and overlay");
+  };
 
   const fitSelectedToStream = (mode: "fit" | "fill") => {
     if (
@@ -1173,7 +1291,7 @@ export function ElementPanel({
         </button>
         <button
           className="ui-icon-button ui-button--compact ui-danger"
-          title="Permanently delete this layer"
+          title="Delete this layer. Use Ctrl/Cmd + Z immediately afterward to undo"
           onClick={(e) => {
             e.stopPropagation();
             onDelete(el.id);
@@ -1339,6 +1457,27 @@ export function ElementPanel({
           )}
         </div>
       </div>
+      {elements.length > 0 && (
+        <div style={{ padding: "6px 8px", borderBottom: "1px solid #1e1e1e" }}>
+          <input
+            value={layerSearch}
+            onChange={(event) => setLayerSearch(event.target.value)}
+            placeholder="Search layers…"
+            aria-label="Search layers"
+            style={{
+              width: "100%",
+              height: 30,
+              boxSizing: "border-box",
+              padding: "0 8px",
+              border: "1px solid #34343a",
+              borderRadius: 5,
+              background: "#171719",
+              color: "#e1e5eb",
+              fontSize: 11,
+            }}
+          />
+        </div>
+      )}
       {selectedElement?.dvdEnabled && !selectedElement.locked && (
         <div className="dvd-selected-controls">
         <div
@@ -1398,10 +1537,51 @@ export function ElementPanel({
             <button className="ui-button ui-button--compact" onClick={() => onElementChange(selectedElement.id, { locked: !selectedElement.locked })} title={selectedElement.locked ? "Unlock this element for editing" : "Lock this element to prevent accidental movement, resizing, or deletion"} style={{ flex: 1, background: selectedElement.locked ? "var(--accent-surface)" : "#202020", border: `1px solid ${selectedElement.locked ? "var(--accent-border)" : "#3a3a3a"}`, color: selectedElement.locked ? "var(--accent-text)" : "#bec5cf", cursor: "pointer" }}>{selectedElement.locked ? <Unlock size={12}/> : <Lock size={12}/>} {selectedElement.locked ? "Unlock" : "Lock"}</button>
           </div>
           <label style={{ display: "grid", gridTemplateColumns: "52px 1fr 34px", alignItems: "center", gap: 6, color: "#aeb6c2", fontSize: 10 }}><span>Opacity</span><input type="range" min="0" max="1" step="0.05" value={selectedElement.opacity ?? 1} onChange={(event) => onElementChange(selectedElement.id, { opacity: Number(event.target.value) })} style={{ minWidth: 0, accentColor: "var(--accent-border)" }}/><span style={{ textAlign: "right" }}>{Math.round((selectedElement.opacity ?? 1) * 100)}%</span></label>
+          {!selectedElement.locked && ["image", "gif", "video"].includes(selectedElement.type) && (
+            <div className="selected-media-animation">
+              <strong>PLAY ANIMATION</strong>
+              <div>
+                <select
+                  value={selectedAnimation}
+                  onChange={(event) => setSelectedAnimation(event.target.value as SelectedAnimation)}
+                  title="Choose a one-time animation for this media on both the dashboard and OBS overlay"
+                >
+                  <option value="slide-lr">Slide left → right</option>
+                  <option value="slide-rl">Slide right → left</option>
+                  <option value="slide-tb">Slide top → bottom</option>
+                  <option value="slide-bt">Slide bottom → top</option>
+                  <option value="pop">Pop</option>
+                  <option value="pulse">Pulse</option>
+                  <option value="spin">Spin</option>
+                  <option value="shake">Shake</option>
+                </select>
+                <label title="Animation duration in seconds">
+                  <input
+                    type="number"
+                    min="0.2"
+                    max="10"
+                    step="0.1"
+                    value={animationDuration}
+                    onChange={(event) => setAnimationDuration(Number(event.target.value))}
+                    aria-label="Animation duration in seconds"
+                  />
+                  <span>s</span>
+                </label>
+                <button className="ui-icon-button" onClick={playSelectedAnimation} title="Play this animation now on the dashboard and OBS overlay">
+                  <Play size={13} />
+                </button>
+              </div>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <label style={{ display: "grid", gap: 3, color: "#8f99a8", fontSize: 9 }}>SHOW<select value={selectedElement.enterAnimation ?? "fade"} onChange={(event) => onElementChange(selectedElement.id, { enterAnimation: event.target.value as CanvasElement['enterAnimation'] })} style={{ height: 28, border: "1px solid #3a3a3a", borderRadius: 4, background: "#1d1d1f", color: "#d5dae2", fontSize: 10 }}>{["none","fade","pop","slide-left","slide-right","slide-up","slide-down","spin"].map(value => <option key={value}>{value}</option>)}</select></label>
             <label style={{ display: "grid", gap: 3, color: "#8f99a8", fontSize: 9 }}>HIDE<select value={selectedElement.exitAnimation ?? "fade"} onChange={(event) => onElementChange(selectedElement.id, { exitAnimation: event.target.value as CanvasElement['exitAnimation'] })} style={{ height: 28, border: "1px solid #3a3a3a", borderRadius: 4, background: "#1d1d1f", color: "#d5dae2", fontSize: 10 }}>{["none","fade","pop","slide-left","slide-right","slide-up","slide-down","spin"].map(value => <option key={value}>{value}</option>)}</select></label>
           </div>
+        </div>
+      )}
+      {!selectedElement && elements.length > 0 && (
+        <div className="layer-selection-hint">
+          Select a layer to edit opacity, animations, locking, and effects.
         </div>
       )}
       <div style={{ flex: 1, overflowY: "auto" }}>
@@ -1415,10 +1595,15 @@ export function ElementPanel({
               fontFamily: "Inter,sans-serif",
             }}
           >
-            No elements yet
+            No layers yet. Use Add media, Text, Draw, or drag a file onto the workspace.
           </div>
         )}
-        {slots.map((slot, slotIdx) => {
+        {slots.length > 0 && visibleSlots.length === 0 && (
+          <div style={{ padding: 16, fontSize: 11, color: "#737d8c", textAlign: "center" }}>
+            No layers match “{layerSearch}”.
+          </div>
+        )}
+        {visibleSlots.map(({ slot, originalIndex: slotIdx }) => {
           if (slot.kind === "element") {
             return renderRow(slot.el, slotIdx, false);
           }
@@ -1553,109 +1738,6 @@ export function ElementPanel({
       {footer}
       {/* OVER HERE SHOULD BE FINE I THINK */}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Live cursors
-// ---------------------------------------------------------------------------
-function cursorForeground(color: string) {
-  const match = /^#([\da-f]{6})$/i.exec(color);
-  if (!match) return "#ffffff";
-  const value = match[1];
-  const [red, green, blue] = [0, 2, 4].map((offset) =>
-    Number.parseInt(value.slice(offset, offset + 2), 16) / 255,
-  );
-  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-  return luminance > 0.62 ? "#111827" : "#ffffff";
-}
-
-function LiveCursors({
-  cursors,
-  pan,
-  zoom,
-  large = false,
-}: {
-  cursors: Map<string, CursorPayload>;
-  pan: { x: number; y: number };
-  zoom: number;
-  large?: boolean;
-}) {
-  return (
-    <>
-      {[...cursors.values()].map((c) => (
-        <div
-          key={c.userId}
-          style={{
-            position: "absolute",
-            left: c.x * zoom + pan.x,
-            top: c.y * zoom + pan.y,
-            pointerEvents: "none",
-            zIndex: 1000,
-            transition: "left 60ms linear, top 60ms linear",
-          }}
-        >
-          <svg
-            width={large ? 32 : 18}
-            height={large ? 32 : 18}
-            viewBox="0 0 20 20"
-            style={{
-              display: "block",
-              filter: large
-                ? "drop-shadow(0 2px 3px rgba(0,0,0,.8))"
-                : undefined,
-            }}
-          >
-            <path
-              d="M4 2L16 10L10 11L7 18L4 2Z"
-              fill={c.color}
-              stroke={cursorForeground(c.color)}
-              strokeWidth={large ? "2" : "1.5"}
-            />
-          </svg>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: large ? 7 : 4,
-              background: c.color,
-              borderRadius: large ? 7 : 4,
-              padding: large ? "5px 10px" : "2px 6px",
-              whiteSpace: "nowrap",
-              marginTop: large ? 3 : 2,
-              border: large
-                ? `2px solid ${cursorForeground(c.color)}`
-                : `1px solid ${cursorForeground(c.color)}`,
-              boxShadow: large ? "0 3px 8px rgba(0,0,0,.65)" : undefined,
-            }}
-          >
-            <img
-              src={c.avatar}
-              alt=""
-              style={{
-                width: large ? 24 : 14,
-                height: large ? 24 : 14,
-                borderRadius: "50%",
-              }}
-            />
-            <span
-              style={{
-                fontSize: large ? 18 : 11,
-                color: cursorForeground(c.color),
-                fontWeight: large ? 700 : 600,
-                fontFamily: "Inter, sans-serif",
-                textShadow:
-                  cursorForeground(c.color) === "#ffffff"
-                    ? "0 1px 2px rgba(0,0,0,.8)"
-                    : "0 1px 1px rgba(255,255,255,.45)",
-              }}
-            >
-              {c.displayName}
-            </span>
-          </div>
-        </div>
-      ))}
-    </>
   );
 }
 
@@ -2388,6 +2470,7 @@ export function CanvasStage({
         setRotation(node, rot);
         applyNodeTransform(node);
       }
+      playRequestedEffect(node, el);
 
       // Update text content live
       if (el.type === "text") {
@@ -3049,6 +3132,7 @@ export const OverlayStage = forwardRef<
   // Container for hidden audio elements
   const audioContainerRef = useRef<HTMLDivElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+  const drawLiveCanvasRef = useRef<HTMLCanvasElement>(null);
   const cornerFxCanvasRef = useRef<HTMLCanvasElement>(null);
   const cornerParticlesRef = useRef<CornerParticle[]>([]);
   const cornerAudioContextRef = useRef<AudioContext | null>(null);
@@ -3337,6 +3421,16 @@ export const OverlayStage = forwardRef<
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(base, 0, 0);
+  }, [strokes]);
+
+  // Keep in-progress remote strokes on their own transparent layer. This
+  // avoids copying the complete 1080p committed drawing for every live shape
+  // position received from the dashboard.
+  useEffect(() => {
+    const canvas = drawLiveCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (liveStrokes) {
       for (const live of liveStrokes.values()) {
         renderAction(
@@ -3352,7 +3446,7 @@ export const OverlayStage = forwardRef<
         );
       }
     }
-  }, [strokes, liveStrokes]);
+  }, [liveStrokes]);
 
   useImperativeHandle(ref, () => ({
     applyControl(payload: MediaControlPayload) {
@@ -3501,6 +3595,7 @@ export const OverlayStage = forwardRef<
       node.style.zIndex = String(el.zIndex);
       setScale(node, sx, sy);
       applyNodeTransform(node);
+      playRequestedEffect(node, el);
 
       // Sync volume whenever element state changes
       if (el.type === "video") {
@@ -3645,6 +3740,17 @@ export const OverlayStage = forwardRef<
           inset: 0,
           pointerEvents: "none",
           zIndex: 999,
+        }}
+      />
+      <canvas
+        ref={drawLiveCanvasRef}
+        width={STREAM_W}
+        height={STREAM_H}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 1000,
         }}
       />
       <LiveCursors

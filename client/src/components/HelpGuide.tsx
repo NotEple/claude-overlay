@@ -50,21 +50,33 @@ const sections = [
   {
     title: "Top toolbar",
     items: [
-      ["Media", "Upload an image, GIF, video, or audio file."],
+      ["Add media", "Upload an image, GIF, video, or audio file."],
       ["Text", "Create a styled text element."],
       ["Draw", "Open Pen, Erase, Fill, brush size, and drawing controls."],
       ["Add as Element", "Turn the current drawing into movable media."],
       ["Fit / Fill", "Fit inside the stream area, or cover it completely."],
       ["DVD", "Start or stop bouncing movement for the selected element."],
       [
-        "Add media / drag and drop",
-        "Upload with Add media, or drag one image, GIF, video, or audio file directly onto the workspace. A highlighted drop area confirms where it will be accepted.",
+        "Drag and drop",
+        "Drop one image, GIF, video, or audio file directly onto the workspace. A highlighted drop area confirms where it will be accepted.",
       ],
       [
         "Flip X / Flip Y",
         "Mirror selected visual media horizontally or vertically.",
       ],
       ["Auto", "For video: show on play, then hide when playback ends."],
+    ],
+  },
+  {
+    title: "Drawing mode",
+    items: [
+      ["Pen / Erase", "Draw or remove freehand strokes. The circle at the pointer previews the current brush size."],
+      ["Line / Arrow", "Drag between two points. Hold Shift to snap to 45° angles."],
+      ["Box / Oval", "Drag out a rectangle or ellipse. Hold Shift to constrain it to a square or circle."],
+      ["Opacity", "Set transparency for new strokes, shapes, and fills."],
+      ["Fill tolerance", "Control how closely neighboring pixels must match; lower values stop at sharper boundaries."],
+      ["Exit Draw", "Exit drawing mode and return to selecting and moving overlay elements."],
+      ["Clear", "Remove the complete drawing after confirmation. Use Undo to restore it immediately."],
     ],
   },
   {
@@ -79,7 +91,7 @@ const sections = [
       ],
       [
         "Video body",
-        "Click to play or pause; drag to move. Native controls stay at the bottom.",
+        "Click the upper video area to play or pause, or drag it to move. Native playback and volume controls stay in the bottom strip.",
       ],
       ["Preview eye", "Show or hide the Twitch preview only on the dashboard."],
       [
@@ -88,12 +100,20 @@ const sections = [
       ],
       ["Refresh overlay", "Ask connected overlay browser sources to reload."],
       [
+        "Go-live check",
+        "Verify the dashboard server, OBS connection, Twitch listeners, broadcaster Events, command targets, and visible media placement before a stream.",
+      ],
+      [
         "Studio",
         "Open the Soundboard, commands, Twitch events, and chat emotes.",
       ],
       [
         "Selection hints",
         "Contextual tips appear whenever a new media element is selected until you choose Don’t show again. Dismissing them permanently does not remove this guide.",
+      ],
+      [
+        "Search layers and Studio lists",
+        "Filter large layer, Soundboard, command, and event-action lists by name without changing the overlay.",
       ],
     ],
   },
@@ -106,7 +126,7 @@ const sections = [
       ],
       [
         "Myinstants links",
-        "Paste the normal URL from a Myinstants sound page. The server securely resolves and stores its direct MP3 link; the sound name is optional.",
+        "Sound-page links are resolved on a best-effort basis. If Myinstants blocks the server, use Download MP3 and then Upload file.",
       ],
       [
         "Add another action",
@@ -137,8 +157,12 @@ const sections = [
         "When a selected element is using DVD mode, adjust its speed and the shared corner sound, volume, and counter position directly beneath it.",
       ],
       [
+        "Selected media animation",
+        "Select an image, GIF, or video in Layers, choose a directional slide, Pop, Pulse, Spin, or Shake, set its duration, and press Play. It runs on the dashboard and OBS; slides restore the previous position afterward.",
+      ],
+      [
         "Studio · Emotes",
-        "Tune gravity, size, sender-label colors, and wall/floor motion; blacklist chatters and preview locally. Wide emotes keep their natural proportions, and each sender gets one active emote.",
+        "Choose an ordered bottom parade, floor physics, or wall bounce; tune size, speed, labels, gravity, and limits, blacklist chatters, and preview locally. Wide emotes keep their natural proportions.",
       ],
       [
         "Show my cursor on overlay",

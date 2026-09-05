@@ -7,6 +7,7 @@ import type { CanvasElement, MediaType } from "../types";
 import { authHeaders } from "../hooks/useAuth";
 import type { DrawToolMode } from "./DrawingCanvas";
 import { useToast } from "./ToastProvider";
+import { useConfirm } from "./ConfirmProvider";
 import {
   Disc,
   Pencil,
@@ -25,6 +26,11 @@ import {
   FlipVertical2,
   Undo2,
   Redo2,
+  Minus,
+  ArrowRight,
+  Square,
+  Circle,
+  Droplets,
 } from "lucide-react";
 import { STREAM_H, STREAM_OFFSET_X, STREAM_OFFSET_Y, STREAM_W } from "../canvas/config";
 import { createDvdMotion, getDvdPosition } from "../canvas/dvdMotion";
@@ -50,11 +56,16 @@ interface ToolbarProps {
   onDrawColorChange: (c: string) => void;
   drawSize: number;
   onDrawSizeChange: (s: number) => void;
+  drawOpacity: number;
+  onDrawOpacityChange: (opacity: number) => void;
+  fillTolerance: number;
+  onFillToleranceChange: (tolerance: number) => void;
   toolMode: DrawToolMode;
   onToolModeChange: (m: DrawToolMode) => void;
   onDrawClear: () => void;
   onSaveDrawingAsElement: () => void;
   hasStrokes: boolean;
+  strokeCount: number;
   selectedElement?: CanvasElement;
   onElementChange: (id: string, changes: Partial<CanvasElement>) => void;
   onUndo: () => void;
@@ -122,11 +133,16 @@ export function Toolbar({
   onDrawColorChange,
   drawSize,
   onDrawSizeChange,
+  drawOpacity,
+  onDrawOpacityChange,
+  fillTolerance,
+  onFillToleranceChange,
   toolMode,
   onToolModeChange,
   onDrawClear,
   onSaveDrawingAsElement,
   hasStrokes,
+  strokeCount,
   selectedElement,
   onElementChange,
   onUndo,
@@ -138,6 +154,7 @@ export function Toolbar({
   const [showTextDialog, setShowTextDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
   const toast = useToast();
+  const confirm = useConfirm();
 
   const fitSelected = (mode: "fit" | "fill") => {
     if (!selectedElement || selectedElement.width <= 0 || selectedElement.height <= 0) return;
@@ -217,12 +234,11 @@ export function Toolbar({
         zIndex: Date.now(),
       });
       toast.success(`${file.name} added to the canvas`);
-      if (
-        type === "audio" &&
-        window.confirm(
-          "Also add this audio to the Soundboard? Soundboard clips can play on OBS without creating or showing a canvas layer.",
-        )
-      ) {
+      if (type === "audio" && await confirm({
+        title: "Add to Soundboard?",
+        message: "Soundboard clips can play on OBS without creating or showing a canvas layer.",
+        confirmLabel: "Add sound",
+      })) {
         onSaveSound({
           id: randomUUID(),
           name: file.name.replace(/\.[^.]+$/, ""),
@@ -326,6 +342,7 @@ export function Toolbar({
     onClick: () => void,
     active = false,
     title?: string,
+    variant: "default" | "primary" | "danger" = "default",
   ) => (
     <button
       className="ui-button"
@@ -334,10 +351,18 @@ export function Toolbar({
       style={{
         height: BUTTON_HEIGHT,
         padding: "0 11px",
-        background: active ? "var(--accent-solid)" : "#202020",
-        border: `1px solid ${active ? "var(--accent-border)" : "#3a3a3a"}`,
+        background: variant === "danger"
+          ? "#7f1d1d"
+          : variant === "primary" || active
+            ? "var(--accent-solid)"
+            : "#202020",
+        border: `1px solid ${variant === "danger" ? "#ef4444" : variant === "primary" || active ? "var(--accent-border)" : "#3a3a3a"}`,
         borderRadius: 5,
-        color: active ? "var(--accent-contrast)" : "var(--text-secondary)",
+        color: variant === "danger"
+          ? "#fee2e2"
+          : variant === "primary" || active
+            ? "var(--accent-contrast)"
+            : "var(--text-secondary)",
         fontSize: TOOLBAR_FONT_SIZE,
         cursor: "pointer",
         fontFamily: "Inter, sans-serif",
@@ -467,6 +492,9 @@ export function Toolbar({
 
         {drawMode && (
           <>
+            <span className="drawing-action-count" title="Completed drawing actions; each stroke, shape, or fill can be undone separately">
+              DRAWING · {strokeCount}
+            </span>
             {/* Tool buttons */}
             {toolBtn(
               <>
@@ -489,6 +517,10 @@ export function Toolbar({
               "fill",
               "Flood fill enclosed area",
             )}
+            {toolBtn(<><Minus size={ICON_SIZE} /> Line</>, "line", "Draw a straight line. Hold Shift to snap it to 45-degree angles")}
+            {toolBtn(<><ArrowRight size={ICON_SIZE} /> Arrow</>, "arrow", "Draw an arrow. Hold Shift to snap it to 45-degree angles")}
+            {toolBtn(<><Square size={ICON_SIZE} /> Box</>, "rectangle", "Draw a rectangle. Hold Shift to make a square")}
+            {toolBtn(<><Circle size={ICON_SIZE} /> Oval</>, "ellipse", "Draw an ellipse. Hold Shift to make a circle")}
 
             <div
               style={{
@@ -543,7 +575,8 @@ export function Toolbar({
                 value={drawColor}
                 onChange={(e) => {
                   onDrawColorChange(e.target.value);
-                  if (toolMode !== "pen") onToolModeChange("pen");
+                  if (toolMode === "eraser" || toolMode === "fill")
+                    onToolModeChange("pen");
                 }}
                 title="Choose a custom drawing color"
                 style={{
@@ -600,6 +633,36 @@ export function Toolbar({
               </div>
             )}
 
+            <div className="draw-setting" title="Set drawing opacity">
+              <Droplets size={ICON_SIZE} />
+              <span>Opacity</span>
+              <input
+                type="range"
+                min="0.05"
+                max="1"
+                step="0.05"
+                value={drawOpacity}
+                onChange={(event) => onDrawOpacityChange(Number(event.target.value))}
+              />
+              <output>{Math.round(drawOpacity * 100)}%</output>
+            </div>
+
+            {toolMode === "fill" && (
+              <div className="draw-setting" title="How closely pixels must match for flood fill; lower values stop at sharper boundaries">
+                <SlidersHorizontal size={ICON_SIZE} />
+                <span>Tolerance</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="160"
+                  step="8"
+                  value={fillTolerance}
+                  onChange={(event) => onFillToleranceChange(Number(event.target.value))}
+                />
+                <output>{fillTolerance}</output>
+              </div>
+            )}
+
             {hasStrokes &&
               btn(
                 <>
@@ -608,6 +671,7 @@ export function Toolbar({
                 onSaveDrawingAsElement,
                 false,
                 "Convert drawing to a draggable element",
+                "primary",
               )}
             {hasStrokes &&
               btn(
@@ -617,6 +681,7 @@ export function Toolbar({
                 onDrawClear,
                 false,
                 "Clear all drawing",
+                "danger",
               )}
           </>
         )}

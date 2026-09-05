@@ -2,11 +2,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import {
   CanvasStage,
   ElementPanel,
-  SPAWN_X,
-  SPAWN_Y,
-  WORKSPACE_W,
-  WORKSPACE_H,
 } from "../components/CanvasStage";
+import { SPAWN_X, SPAWN_Y, WORKSPACE_H, WORKSPACE_W } from "../canvas/config";
 import { DrawingCanvas, renderAction } from "../components/DrawingCanvas";
 import type { DrawToolMode } from "../components/DrawingCanvas";
 import { Toolbar } from "../components/Toolbar";
@@ -41,36 +38,18 @@ import { useToast } from "../components/ToastProvider";
 import { HelpGuide } from "../components/HelpGuide";
 import { SelectionHint } from "../components/SelectionHint";
 import TileController from "../components/TileController";
+import { ReadinessCheck } from "../components/ReadinessCheck";
+import { useConfirm } from "../components/ConfirmProvider";
+import {
+  CUSTOM_ACCENT_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  customAccentVariables,
+  loadStoredAccent,
+  loadStoredTheme,
+  type DashboardTheme,
+} from "../theme";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
-type DashboardTheme = "fox" | "custom";
-const THEME_STORAGE_KEY = "dashboard_theme";
-const CUSTOM_ACCENT_STORAGE_KEY = "dashboard_custom_accent";
-
-export function customAccentVariables(hex: string) {
-  const value = hex.replace("#", "");
-  const rgb = [0, 2, 4].map((offset) =>
-    Number.parseInt(value.slice(offset, offset + 2), 16),
-  );
-  const luminance = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
-  const mix = (target: number, amount: number) =>
-    `#${rgb
-      .map((channel) =>
-        Math.round(channel + (target - channel) * amount)
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")}`;
-  return {
-    "--accent-solid": hex,
-    "--accent-border": mix(255, 0.18),
-    "--accent-text": mix(255, 0.38),
-    "--accent-surface": mix(0, 0.72),
-    "--accent-surface-strong": mix(0, 0.56),
-    "--accent-rgb": rgb.join(", "),
-    "--accent-contrast": luminance > 0.58 ? "#111827" : "#ffffff",
-  } as React.CSSProperties;
-}
 
 interface DashboardProps {
   user: AuthUser;
@@ -86,6 +65,10 @@ export function Dashboard({
   onRoleUpdated,
 }: DashboardProps) {
   const toast = useToast();
+  const confirm = useConfirm();
+  const handleFillRejected = useCallback(() => {
+    toast.info("Fill only works inside a fully enclosed shape");
+  }, [toast]);
   const dashboardControlRef = useRef<
     ((payload: MediaControlPayload) => void) | null
   >(null);
@@ -168,6 +151,8 @@ export function Dashboard({
   const [drawMode, setDrawMode] = useState(false);
   const [drawColor, setDrawColor] = useState("#ff4444");
   const [drawSize, setDrawSize] = useState(6);
+  const [drawOpacity, setDrawOpacity] = useState(1);
+  const [fillTolerance, setFillTolerance] = useState(64);
   const [toolMode, setToolMode] = useState<DrawToolMode>("pen");
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [showTwitchEmbed, setShowTwitchEmbed] = useState(true);
@@ -176,13 +161,8 @@ export function Dashboard({
   const [activityMenuOpen, setActivityMenuOpen] = useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = useState(false);
   const [showStudio, setShowStudio] = useState(true);
-  const [theme, setTheme] = useState<DashboardTheme>(() => {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    return saved === "custom" || saved === "indigo" ? "custom" : "fox";
-  });
-  const [customAccent, setCustomAccent] = useState(
-    () => localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY) ?? "#4f46e5",
-  );
+  const [theme, setTheme] = useState<DashboardTheme>(loadStoredTheme);
+  const [customAccent, setCustomAccent] = useState(loadStoredAccent);
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -639,6 +619,16 @@ export function Dashboard({
           >
             <RotateCcw size={14} />
           </button>
+          <ReadinessCheck
+            connected={connected}
+            overlayConnected={overlayConnected}
+            overlayCount={overlayCount}
+            twitchConnected={studio.twitchConnected}
+            twitchChannel={twitchChannel}
+            chatEmotesEnabled={chatEmoteSettings.enabled}
+            elements={elements}
+            studio={studio}
+          />
           <button
             className="ui-button"
             onClick={() => setShowStudio((value) => !value)}
@@ -668,14 +658,25 @@ export function Dashboard({
         onDrawColorChange={setDrawColor}
         drawSize={drawSize}
         onDrawSizeChange={setDrawSize}
+        drawOpacity={drawOpacity}
+        onDrawOpacityChange={setDrawOpacity}
+        fillTolerance={fillTolerance}
+        onFillToleranceChange={setFillTolerance}
         toolMode={toolMode}
         onToolModeChange={setToolMode}
-        onDrawClear={() => {
+        onDrawClear={async () => {
+          if (!await confirm({
+            title: "Clear the drawing?",
+            message: "This removes every stroke, shape, and fill. You can restore it immediately with Undo.",
+            confirmLabel: "Clear drawing",
+            danger: true,
+          })) return;
           clearStrokes();
           toast.success("Drawing cleared");
         }}
         onSaveDrawingAsElement={handleSaveDrawingAsElement}
         hasStrokes={strokes.length > 0}
+        strokeCount={strokes.length}
         selectedElement={selectedElement}
         onElementChange={updateElement}
         onUndo={undo}
@@ -1217,170 +1218,6 @@ export function Dashboard({
                       }}
                     />
                   </label>
-                  {false && (
-                    <div
-                      style={{
-                        padding: "7px 4px 5px",
-                        marginBottom: 7,
-                        borderTop: "1px solid #2a2a2a",
-                        borderBottom: "1px solid #2a2a2a",
-                      }}
-                    >
-                      <div
-                        style={{
-                          color: "#a3aab5",
-                          fontSize: 9,
-                          letterSpacing: "0.08em",
-                          marginBottom: 7,
-                        }}
-                      >
-                        DVD CORNER SOUND
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 7,
-                          marginBottom: 7,
-                          color: "#b6beca",
-                          fontSize: 10,
-                        }}
-                      >
-                        <span>Volume</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          value={dvdCelebrationSettings.volume}
-                          onChange={(event) =>
-                            setDvdCelebrationSettings({
-                              ...dvdCelebrationSettings,
-                              volume: Number(event.target.value),
-                            })
-                          }
-                          title="Set the DVD corner celebration sound volume"
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            accentColor: "var(--accent-border)",
-                          }}
-                        />
-                        <span style={{ width: 30, textAlign: "right" }}>
-                          {Math.round(dvdCelebrationSettings.volume * 100)}%
-                        </span>
-                      </div>
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 7,
-                          marginBottom: 7,
-                          color: "#b6beca",
-                          fontSize: 10,
-                        }}
-                      >
-                        <span>Counter</span>
-                        <select
-                          value={dvdCelebrationSettings.counterPosition}
-                          onChange={(event) => {
-                            const counterPosition = event.target
-                              .value as typeof dvdCelebrationSettings.counterPosition;
-                            setDvdCelebrationSettings({
-                              ...dvdCelebrationSettings,
-                              counterPosition,
-                            });
-                            toast.success(
-                              `DVD counter moved to ${event.target.options[event.target.selectedIndex].text.toLowerCase()}`,
-                            );
-                          }}
-                          title="Choose where the DVD corner counter appears on overlay"
-                          style={{
-                            flex: 1,
-                            height: 28,
-                            padding: "0 7px",
-                            borderRadius: 4,
-                            border: "1px solid #3a3a3f",
-                            background: "#202020",
-                            color: "#d1d5db",
-                            font: "600 10px Inter,sans-serif",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <option value="top-left">Top left</option>
-                          <option value="top-center">Top center</option>
-                          <option value="top-right">Top right</option>
-                          <option value="bottom-left">Bottom left</option>
-                          <option value="bottom-center">Bottom center</option>
-                          <option value="bottom-right">Bottom right</option>
-                        </select>
-                      </label>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 5,
-                        }}
-                      >
-                        <label
-                          className="ui-button ui-button--compact"
-                          title="Upload an audio file for DVD corner celebrations"
-                          style={{
-                            minWidth: 0,
-                            cursor: dvdSoundUploading ? "wait" : "pointer",
-                            background: dvdCelebrationSettings.soundUrl
-                              ? "var(--accent-surface-strong)"
-                              : "#202020",
-                            border: dvdCelebrationSettings.soundUrl
-                              ? "1px solid var(--accent-border)"
-                              : "1px solid #333",
-                            color: "#d1d5db",
-                          }}
-                        >
-                          {dvdSoundUploading
-                            ? "Uploading…"
-                            : dvdCelebrationSettings.soundUrl
-                              ? "Replace sound"
-                              : "Upload sound"}
-                          <input
-                            type="file"
-                            accept="audio/mpeg,audio/wav,audio/ogg,audio/webm"
-                            disabled={dvdSoundUploading}
-                            onChange={handleDvdSoundUpload}
-                            style={{ display: "none" }}
-                          />
-                        </label>
-                        <button
-                          className="ui-button ui-button--compact"
-                          onClick={() => {
-                            setDvdCelebrationSettings({
-                              ...dvdCelebrationSettings,
-                              soundUrl: null,
-                            });
-                            toast.success(
-                              "Using the built-in DVD corner chime",
-                            );
-                          }}
-                          disabled={!dvdCelebrationSettings.soundUrl}
-                          title="Use the built-in three-note corner chime"
-                          style={{
-                            minWidth: 0,
-                            background: dvdCelebrationSettings.soundUrl
-                              ? "#202020"
-                              : "var(--accent-surface-strong)",
-                            border: dvdCelebrationSettings.soundUrl
-                              ? "1px solid #333"
-                              : "1px solid var(--accent-border)",
-                            color: dvdCelebrationSettings.soundUrl
-                              ? "#b6beca"
-                              : "var(--accent-text)",
-                          }}
-                        >
-                          Built-in chime
-                        </button>
-                      </div>
-                    </div>
-                  )}
                   <div style={{ display: "grid", gap: 7 }}>
                     <button
                       className="ui-button ui-button--compact"
@@ -1552,11 +1389,23 @@ export function Dashboard({
                 toolMode={toolMode}
                 color={drawColor}
                 size={drawSize}
+                opacity={drawOpacity}
+                fillTolerance={fillTolerance}
                 onStroke={addStroke}
+                onFillRejected={handleFillRejected}
                 onLiveStroke={sendLiveStroke}
               />
             }
           />
+          {drawMode && liveStrokes.size > 0 && (
+            <div className="drawing-presence" role="status">
+              <span />
+              {[...liveStrokes.keys()]
+                .map((userId) => activeUsers.find((activeUser) => activeUser.userId === userId)?.displayName ?? "Another editor")
+                .slice(0, 2)
+                .join(", ")}{liveStrokes.size > 2 ? ` +${liveStrokes.size - 2}` : ""} drawing
+            </div>
+          )}
           <HelpGuide />
           <SelectionHint elements={elements} selectedIds={selectedIds} />
         </div>
@@ -1585,10 +1434,6 @@ export function Dashboard({
             onPreviewFly={(id, direction, durationSeconds) =>
               previewFlyRef.current?.(id, direction, durationSeconds) ?? false
             }
-            dvdCelebrationSettings={dvdCelebrationSettings}
-            dvdSoundUploading={dvdSoundUploading}
-            onDvdSettingsChange={setDvdCelebrationSettings}
-            onDvdSoundUpload={handleDvdSoundUpload}
             chatEmoteSettings={chatEmoteSettings}
             onChatEmoteSettingsChange={setChatEmoteSettings}
           />
