@@ -58,7 +58,7 @@ const sections = [
       ["DVD", "Start or stop bouncing movement for the selected element."],
       [
         "Drag and drop",
-        "Drop one image, GIF, video, or audio file directly onto the workspace. A highlighted drop area confirms where it will be accepted.",
+        "Drop one local image, GIF, video, or audio file anywhere on the dashboard. You can also drag the GIF image itself from Giphy; webpage links are rejected safely.",
       ],
       [
         "Flip X / Flip Y",

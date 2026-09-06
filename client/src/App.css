@@ -528,7 +528,32 @@ button {
   pointer-events: none;
   transition: opacity 120ms ease;
 }
-.canvas-stage-drop-target.media-drop-active::after { opacity: 1; pointer-events: auto; }
+.canvas-stage-drop-target.media-drop-active::after { opacity: 1; }
+.media-drop-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(8, 8, 10, .72);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+.media-drop-shield > div {
+  width: min(520px, 100%);
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  border: 2px dashed var(--accent-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-surface) 55%, #111);
+  color: var(--accent-text);
+  font-size: 16px;
+  font-weight: 750;
+}
 .dvd-inline-settings {
   display: grid;
   gap: 7px;

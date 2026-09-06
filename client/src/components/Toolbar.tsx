@@ -153,6 +153,8 @@ export function Toolbar({
   const fileRef = useRef<HTMLInputElement>(null);
   const [showTextDialog, setShowTextDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+  const uploadMediaFileRef = useRef<(file: File) => Promise<void>>(async () => {});
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -253,6 +255,31 @@ export function Toolbar({
       setUploading(false);
     }
   };
+  uploadMediaFileRef.current = uploadMediaFile;
+
+  const uploadGiphyUrl = async (url: string) => {
+    try {
+      const parsed = new URL(url);
+      const hostname = parsed.hostname.toLowerCase();
+      if (parsed.protocol !== "https:" || (hostname !== "giphy.com" && !hostname.endsWith(".giphy.com"))) {
+        throw new Error("Drop a local media file or a GIF image from Giphy");
+      }
+      const response = await fetch(parsed.toString(), { mode: "cors", credentials: "omit" });
+      if (!response.ok) throw new Error(`Giphy download failed (${response.status})`);
+      const contentType = response.headers.get("content-type")?.split(";")[0].toLowerCase() ?? "";
+      if (!["image/gif", "image/webp", "image/png", "image/jpeg"].includes(contentType)) {
+        throw new Error("That Giphy drag was a webpage, not a GIF image. Drag the GIF itself");
+      }
+      const blob = await response.blob();
+      if (blob.size > 25 * 1024 * 1024) throw new Error("The dropped Giphy image is larger than 25 MB");
+      const extension = contentType === "image/gif" ? "gif" : contentType === "image/webp" ? "webp" : contentType === "image/png" ? "png" : "jpg";
+      const pathName = decodeURIComponent(parsed.pathname.split("/").pop() || `giphy.${extension}`);
+      const baseName = pathName.replace(/\.[a-z0-9]+$/i, "") || "giphy";
+      await uploadMediaFileRef.current(new File([blob], `${baseName}.${extension}`, { type: contentType }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not import that Giphy image");
+    }
+  };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -261,34 +288,62 @@ export function Toolbar({
   };
 
   useEffect(() => {
-    const dropTarget = () => document.querySelector<HTMLElement>("[data-media-drop-target]");
-    const insideTarget = (event: DragEvent) => {
-      const target = dropTarget();
-      if (!target) return false;
-      const rect = target.getBoundingClientRect();
-      return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    const isMediaDrag = (transfer: DataTransfer | null) => {
+      if (!transfer) return false;
+      return ["Files", "text/uri-list", "text/html"].some((type) => transfer.types.includes(type));
     };
-    const clear = () => dropTarget()?.classList.remove("media-drop-active");
-    const dragOver = (event: DragEvent) => {
-      if (!event.dataTransfer?.types.includes("Files") || !insideTarget(event)) { clear(); return; }
+    const draggedUrl = (transfer: DataTransfer) => {
+      const html = transfer.getData("text/html");
+      if (html) {
+        const imageUrl = new DOMParser().parseFromString(html, "text/html").querySelector("img")?.src;
+        if (imageUrl) return imageUrl;
+      }
+      return transfer.getData("text/uri-list").split(/\r?\n/).find((line) => line && !line.startsWith("#"))
+        || transfer.getData("text/plain");
+    };
+    const dragEnter = (event: DragEvent) => {
+      if (!isMediaDrag(event.dataTransfer)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-      dropTarget()?.classList.add("media-drop-active");
+      setDropActive(true);
+    };
+    const dragOver = (event: DragEvent) => {
+      if (!isMediaDrag(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
     };
     const drop = (event: DragEvent) => {
-      const accepted = insideTarget(event);
-      clear();
-      if (!accepted || !event.dataTransfer?.files.length) return;
+      if (!isMediaDrag(event.dataTransfer)) return;
       event.preventDefault();
-      const files = [...event.dataTransfer.files];
-      if (files.length > 1) toast.info("Uploading the first dropped file");
-      void uploadMediaFile(files[0]);
+      event.stopPropagation();
+      setDropActive(false);
+      const transfer = event.dataTransfer;
+      if (!transfer) return;
+      const files = [...transfer.files];
+      if (files.length) {
+        if (files.length > 1) toast.info("Uploading the first dropped file");
+        void uploadMediaFileRef.current(files[0]);
+        return;
+      }
+      const url = draggedUrl(transfer).trim();
+      if (url) void uploadGiphyUrl(url);
+      else toast.error("No supported media was found in that drop");
     };
+    const dragLeave = (event: DragEvent) => {
+      if (event.relatedTarget === null && (event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight)) {
+        setDropActive(false);
+      }
+    };
+    window.addEventListener("dragenter", dragEnter, true);
     window.addEventListener("dragover", dragOver, true);
     window.addEventListener("drop", drop, true);
-    window.addEventListener("dragleave", clear);
-    return () => { window.removeEventListener("dragover", dragOver, true); window.removeEventListener("drop", drop, true); window.removeEventListener("dragleave", clear); };
-  });
+    window.addEventListener("dragleave", dragLeave, true);
+    return () => {
+      window.removeEventListener("dragenter", dragEnter, true);
+      window.removeEventListener("dragover", dragOver, true);
+      window.removeEventListener("drop", drop, true);
+      window.removeEventListener("dragleave", dragLeave, true);
+    };
+  }, [toast]);
 
   const handleTextConfirm = (config: TextConfig) => {
     onAdd({
@@ -381,6 +436,11 @@ export function Toolbar({
 
   return (
     <>
+      {dropActive && (
+        <div className="media-drop-shield" aria-hidden="true">
+          <div><ImagePlus size={28} /> Drop media to upload</div>
+        </div>
+      )}
       <div
         style={{
           display: "flex",
