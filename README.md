@@ -122,6 +122,7 @@ Copy `server/.env.example` to `server/.env`. Never commit the populated file.
 | `TWITCH_REDIRECT_URI` | Recommended | Dashboard-login callback, ending in `/auth/callback`. |
 | `TWITCH_EVENTS_REDIRECT_URI` | Recommended | Broadcaster callback, ending in `/auth/events/callback`. |
 | `EVENT_CHANNELS` | Yes | Comma-separated broadcaster logins; currently `vicksy,wixels`. |
+| `CHAT_BOT_USERNAME` | For chat messages | Dedicated Twitch account used to send automated messages; defaults to `dankchapbot`. |
 | `DATABASE_URL` | Production | Neon pooled PostgreSQL connection URL with TLS enabled. |
 | `TWITCH_TOKEN_ENCRYPTION_KEY` | Yes for Events | Base64-encoded 32-byte key used to encrypt stored broadcaster tokens. |
 | `TWITCH_EVENTSUB_CALLBACK_URL` | Yes for Events | Public HTTPS webhook URL ending in `/twitch/eventsub`. |
@@ -163,10 +164,15 @@ These are separate OAuth flows:
 
 1. **Dashboard login** identifies an approved controller. The owner always has
    access; everyone else must exist in the whitelist.
-2. **Events connection** is completed once by the Vicksy and Wixels broadcaster
-   accounts. It grants read access to broadcaster events and permission to send
-   configured chat messages. Access and refresh tokens are encrypted before
-   being stored in PostgreSQL and are refreshed automatically.
+2. **Events connections** are completed once by the Vicksy and Wixels
+   broadcaster accounts. They grant only the read permissions needed for
+   broadcaster events.
+3. **Chatbot connection** is completed once by the dedicated DankChapBot
+   account. It grants `user:write:chat`; configured messages use this account as
+   the sender and never use a broadcaster token to write chat.
+
+All access and refresh tokens are encrypted before being stored in PostgreSQL
+and are refreshed automatically.
 
 Public chat commands and emotes do not require broadcaster authorization. The
 anonymous listener follows the dashboard's active Vicksy/Wixels preview.

@@ -17,6 +17,12 @@ export interface TwitchEventChannelStatus {
 export interface TwitchEventStatus {
   configured: boolean;
   channels: TwitchEventChannelStatus[];
+  chatbot?: {
+    login: string;
+    connected: boolean;
+    displayName?: string;
+    scopes: string[];
+  };
 }
 
 /** Owns Twitch Events connection status and all related HTTP actions. */
@@ -67,6 +73,37 @@ export function useTwitchEvents(active: boolean) {
     }
   }, [toast]);
 
+  const connectChatbot = useCallback(async () => {
+    try {
+      const response = await fetch(`${SERVER_URL}/auth/chatbot/start`, { headers: authHeaders() });
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url) {
+        toast.error(data.error ?? "Could not start chatbot authorization");
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      toast.error("Could not reach the server to authorize the chatbot");
+    }
+  }, [toast]);
+
+  const disconnectChatbot = useCallback(async () => {
+    if (!await confirm({
+      title: "Disconnect the chatbot?",
+      message: "Automated chat messages will stop until the chatbot is authorized again.",
+      confirmLabel: "Disconnect",
+      danger: true,
+    })) return;
+    try {
+      const response = await fetch(`${SERVER_URL}/events/chatbot`, { method: "DELETE", headers: authHeaders() });
+      if (!response.ok) throw new Error();
+      toast.success("Chatbot disconnected");
+      void refresh();
+    } catch {
+      toast.error("Could not disconnect the chatbot");
+    }
+  }, [confirm, refresh, toast]);
+
   const disconnect = useCallback(async (channel: string) => {
     if (!await confirm({
       title: `Disconnect ${channel}?`,
@@ -102,5 +139,5 @@ export function useTwitchEvents(active: boolean) {
     }
   }, [toast]);
 
-  return { status, connect, disconnect, test };
+  return { status, connect, connectChatbot, disconnect, disconnectChatbot, test };
 }

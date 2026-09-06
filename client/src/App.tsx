@@ -50,9 +50,11 @@ function DashboardApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("events_connected");
+    const chatbotConnected = params.get("chatbot_connected");
     const eventError = params.get("events_error");
     const actualAccount = params.get("events_actual");
     if (connected) toast.success(`Twitch Events connected to ${connected}`);
+    if (chatbotConnected) toast.success(`Chat messages will be sent as ${chatbotConnected}`);
     if (eventError) {
       const message = eventError.startsWith("expected_")
         ? `Authorize the ${eventError.slice(9)} Twitch account, not ${actualAccount ?? "the currently signed-in account"}`
@@ -66,8 +68,9 @@ function DashboardApp() {
           } as Record<string, string>)[eventError] ?? "Twitch Events authorization failed";
       toast.error(message);
     }
-    if (connected || eventError) {
+    if (connected || chatbotConnected || eventError) {
       params.delete("events_connected");
+      params.delete("chatbot_connected");
       params.delete("events_error");
       params.delete("events_actual");
       const query = params.toString();

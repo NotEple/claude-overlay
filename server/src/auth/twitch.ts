@@ -36,12 +36,12 @@ export function getTwitchAuthUrl(state: string): string {
   return `https://id.twitch.tv/oauth2/authorize?${params}`;
 }
 
-export function getTwitchEventsAuthUrl(state: string): string {
+export function getTwitchEventsAuthUrl(state: string, scopes: string[]): string {
   const params = new URLSearchParams({
     client_id: TWITCH_CLIENT_ID,
     redirect_uri: twitchEventsRedirectUri,
     response_type: "code",
-    scope: "user:read:chat user:write:chat moderator:read:followers channel:read:subscriptions bits:read channel:read:redemptions channel:read:hype_train",
+    scope: scopes.join(" "),
     state,
     force_verify: "true",
   });

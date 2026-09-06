@@ -1302,8 +1302,8 @@ export function StudioPanel(props: StudioPanelProps) {
         )}
         {tab === "events" && (
           <Section
-            title="Channel connections"
-            description="Connections stay at the bottom so event creation and saved actions remain within easy reach."
+            title="Twitch connections"
+            description="Broadcasters provide event access; the separate chatbot account sends automated messages."
           >
             {!eventStatus?.configured && (
               <div style={{ ...rowStyle, color: "#fca5a5" }}>
@@ -1311,9 +1311,43 @@ export function StudioPanel(props: StudioPanelProps) {
                 configuration.
               </div>
             )}
+            {eventStatus?.configured && (
+              <div style={{ ...rowStyle, display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong>Chatbot</strong>
+                  <span style={{ color: eventStatus.chatbot?.connected ? "#86efac" : "#fca5a5", fontSize: 11 }}>
+                    {eventStatus.chatbot?.connected
+                      ? `Connected as ${eventStatus.chatbot.displayName}`
+                      : "Not connected"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button
+                    className="ui-button studio-primary"
+                    disabled={!props.isOwner}
+                    onClick={() => void twitchEvents.connectChatbot()}
+                    title={props.isOwner ? `Authorize ${eventStatus.chatbot?.login ?? "the chatbot"} to send automated messages` : "Only the overlay owner can manage the chatbot connection"}
+                  >
+                    <Link2 size={13} /> {eventStatus.chatbot?.connected ? "Reconnect chatbot" : "Connect chatbot"}
+                  </button>
+                  {eventStatus.chatbot?.connected && props.isOwner && (
+                    <button
+                      className="ui-button ui-danger"
+                      onClick={() => void twitchEvents.disconnectChatbot()}
+                      title="Remove the chatbot's stored authorization"
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </div>
+                <div style={{ color: "#8f99a8", fontSize: 10 }}>
+                  Outgoing automation messages are sent by this account. Broadcaster tokens are never used to write chat.
+                </div>
+              </div>
+            )}
             {(eventStatus?.channels ?? []).map((status) => {
               const channel = status.channel;
-              const canWriteChat = status.scopes.includes("user:write:chat");
+              const hasLegacyChatAccess = status.scopes.includes("user:write:chat");
               return (
                 <div
                   key={channel}
@@ -1347,11 +1381,7 @@ export function StudioPanel(props: StudioPanelProps) {
                       title={`Authorize event access using the ${channel} Twitch account`}
                     >
                       <Link2 size={13} />{" "}
-                      {status?.connected && canWriteChat
-                        ? "Reconnect"
-                        : status?.connected
-                          ? "Reconnect for chat"
-                          : "Connect"}
+                      {status?.connected ? "Reconnect" : "Connect"}
                     </button>
                     {status?.connected && (
                       <button
@@ -1364,14 +1394,13 @@ export function StudioPanel(props: StudioPanelProps) {
                     )}
                   </div>
                   <div style={{ color: "#8f99a8", fontSize: 10 }}>
-                    Chat read/write, follows, subscriptions, Bits, channel
-                    points, and Hype Trains. Reconnect once if chat writing was
-                    added after the original authorization.
+                    Read-only access for follows, subscriptions, Bits, channel
+                    points, and Hype Trains.
                   </div>
-                  {status.connected && !canWriteChat && (
+                  {status.connected && hasLegacyChatAccess && (
                     <div style={{ color: "#fbbf24", fontSize: 11 }}>
-                      Chat messages are unavailable until this channel is
-                      reconnected and grants the new permission.
+                      This connection still has the old chat-writing permission.
+                      Reconnect it to replace that token with event-only access.
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
