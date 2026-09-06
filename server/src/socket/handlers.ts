@@ -130,7 +130,18 @@ export function registerSocketHandlers(
       ...(changes.flyStartedAt ? { flyStartedAt: Date.now() } : {}),
       ...(changes.effectStartedAt ? { effectStartedAt: Date.now() } : {}),
     };
-    record(`update:${id}`, `updated ${element.type}`);
+    const changeKeys = Object.keys(changes);
+    const affectedGroupId = typeof changes.groupId === "string"
+      ? changes.groupId
+      : element.groupId;
+    const transformKeys = new Set(["x", "y", "width", "height", "rotation", "scaleX", "scaleY"]);
+    const isGroupTransform = !!affectedGroupId && changeKeys.length > 0 && changeKeys.every((key) => transformKeys.has(key));
+    record(
+      isGroupTransform ? `update-group:${affectedGroupId}` : `update:${id}`,
+      isGroupTransform
+        ? `${changeKeys.every((key) => key === "x" || key === "y") ? "moved" : "transformed"} ${element.groupName ?? "group"}`
+        : `updated ${element.type}`,
+    );
     if ("groupId" in changes && changes.groupId === null) {
       delete element.groupId;
       delete element.groupName;
