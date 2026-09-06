@@ -967,9 +967,18 @@ button {
   will-change: transform;
   filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.55));
 }
-.chat-emote-particle img {
+.chat-emote-stack {
+  position: relative;
+}
+.chat-emote-stack img {
   display: block;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+}
+.chat-emote-stack .chat-emote-stack__overlay {
+  position: absolute;
+  inset: 0;
 }
 .chat-emote-particle span {
   max-width: 180px;

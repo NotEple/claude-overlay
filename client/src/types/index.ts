@@ -102,6 +102,7 @@ export interface ChatEmoteSpawn {
   emoteId: string;
   name: string;
   imageUrl: string;
+  overlays?: Array<{ emoteId: string; name: string; imageUrl: string }>;
   sender: string;
   senderLogin?: string;
   senderColor?: string;

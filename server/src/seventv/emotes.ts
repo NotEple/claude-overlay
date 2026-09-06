@@ -1,7 +1,12 @@
 interface SevenTvEmote {
   id?: string;
   name?: string;
-  data?: { id?: string; name?: string };
+  flags?: number | { zero_width?: boolean; zeroWidth?: boolean };
+  data?: {
+    id?: string;
+    name?: string;
+    flags?: number | { default_zero_width?: boolean; defaultZeroWidth?: boolean };
+  };
 }
 
 interface SevenTvUserResponse {
@@ -12,6 +17,7 @@ export interface ResolvedSevenTvEmote {
   id: string;
   name: string;
   imageUrl: string;
+  isZeroWidth: boolean;
 }
 
 interface CachedEmoteSet {
@@ -46,6 +52,14 @@ async function loadEmoteSet(twitchUserId: string) {
         id,
         name,
         imageUrl: `https://cdn.7tv.app/emote/${encodeURIComponent(id)}/2x.webp`,
+        // V3 has represented this on both the active set entry and emote data
+        // across API generations. Supporting both keeps cached channel sets
+        // compatible while 7TV rolls out its newer schema.
+        isZeroWidth:
+          (typeof entry.flags === "number" && (entry.flags & 1) !== 0) ||
+          (typeof entry.data?.flags === "number" && (entry.data.flags & 256) !== 0) ||
+          (typeof entry.flags === "object" && !!(entry.flags.zero_width ?? entry.flags.zeroWidth)) ||
+          (typeof entry.data?.flags === "object" && !!(entry.data.flags.default_zero_width ?? entry.data.flags.defaultZeroWidth)),
       });
     }
     caches.set(twitchUserId, { expiresAt: Date.now() + CACHE_MS, emotes });
@@ -69,11 +83,17 @@ export async function resolveSevenTvEmotes(twitchUserId: string, message: string
   try {
     const emoteSet = await loadEmoteSet(twitchUserId);
     const matches: ResolvedSevenTvEmote[] = [];
+    let foundBase = false;
     for (const token of message.split(/\s+/)) {
       const emote = emoteSet.get(token);
       if (!emote) continue;
-      matches.push(emote);
-      if (matches.length >= 1) break;
+      if (!foundBase) {
+        matches.push(emote);
+        foundBase = !emote.isZeroWidth;
+        continue;
+      }
+      if (emote.isZeroWidth) matches.push(emote);
+      else break;
     }
     return matches;
   } catch (error) {

@@ -394,19 +394,12 @@ configureTwitchEvents((eventType, event) => {
   };
   if (eventType === "chat-command" && canvasStore.chatEmoteSettings.enabled && !emoteSenderBlocked && canSpawnChatEmote()) {
     const nativeEmote = event.native_emotes?.[0];
-    if (nativeEmote) {
-      markChatEmoteSpawned();
-      io.to("overlay").emit("chat-emote:spawn", {
-        id: randomUUID(),
-        emoteId: nativeEmote.id,
-        name: nativeEmote.name,
-        imageUrl: nativeEmote.imageUrl,
-        sender: event.chatter_user_name || event.chatter_user_login || "Viewer",
-        senderLogin: emoteSender,
-        senderColor: event.chatter_color,
-      });
-    } else if (event.room_id) void resolveSevenTvEmotes(event.room_id, event.message.text).then((emotes) => {
-      const emote = emotes[0];
+    if (nativeEmote || event.room_id) void (event.room_id
+      ? resolveSevenTvEmotes(event.room_id, event.message.text)
+      : Promise.resolve([])
+    ).then((emotes) => {
+      const sevenTvBase = emotes.find((item) => !item.isZeroWidth);
+      const emote = nativeEmote ?? sevenTvBase ?? emotes[0];
       if (emote && canSpawnChatEmote()) {
         markChatEmoteSpawned();
         io.to("overlay").emit("chat-emote:spawn", {
@@ -414,6 +407,9 @@ configureTwitchEvents((eventType, event) => {
           emoteId: emote.id,
           name: emote.name,
           imageUrl: emote.imageUrl,
+          overlays: emotes
+            .filter((item) => item.isZeroWidth && item.id !== emote.id)
+            .map((item) => ({ emoteId: item.id, name: item.name, imageUrl: item.imageUrl })),
           sender: event.chatter_user_name || event.chatter_user_login || "Viewer",
           senderLogin: emoteSender,
           senderColor: event.chatter_color,

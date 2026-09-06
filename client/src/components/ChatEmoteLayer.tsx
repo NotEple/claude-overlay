@@ -217,15 +217,24 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
               {particle.sender}
             </span>
           )}
-          <img
-            src={particle.imageUrl}
-            alt={particle.name}
-            draggable={false}
+          <div
+            className="chat-emote-stack"
             style={{
               width: settings.size * scale * particle.aspectRatio,
               height: settings.size * scale,
             }}
-          />
+          >
+            <img src={particle.imageUrl} alt={particle.name} draggable={false} />
+            {particle.overlays?.map((overlay, index) => (
+              <img
+                key={`${overlay.emoteId}-${index}`}
+                className="chat-emote-stack__overlay"
+                src={overlay.imageUrl}
+                alt={overlay.name}
+                draggable={false}
+              />
+            ))}
+          </div>
         </div>
       ))}
     </div>
