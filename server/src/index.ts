@@ -23,7 +23,7 @@ import { twitchClientId } from "./auth/twitch.js";
 import { CHATBOT_AUTH_KEY, createEventRoutes } from "./twitch/eventRoutes.js";
 import { createEventWebhook } from "./twitch/eventWebhook.js";
 import { resolveSevenTvEmotes } from "./seventv/emotes.js";
-import { initializeWhitelistStore } from "./db/index.js";
+import { initializeChatEmoteSettingsStore, initializeWhitelistStore } from "./db/index.js";
 import { myinstantsRouter } from "./uploads/myinstants.js";
 
 const app = express();
@@ -43,6 +43,18 @@ await initializeWhitelistStore().catch((error) => {
   console.error("Whitelist database initialization failed", error);
   if (process.env.NODE_ENV === "production") throw error;
 });
+const storedChatEmoteSettings = await initializeChatEmoteSettingsStore().catch((error) => {
+  console.error("Could not initialize persistent chat-emote settings", error);
+  return undefined;
+});
+if (storedChatEmoteSettings) {
+  canvasStore.chatEmoteSettings = {
+    ...canvasStore.chatEmoteSettings,
+    ...storedChatEmoteSettings,
+    blacklist: Array.isArray(storedChatEmoteSettings.blacklist) ? storedChatEmoteSettings.blacklist : [],
+    additionalEmotes: Array.isArray(storedChatEmoteSettings.additionalEmotes) ? storedChatEmoteSettings.additionalEmotes : [],
+  };
+}
 app.use(createEventRoutes(emitTwitchEvent));
 
 // ---------------------------------------------------------------------------
@@ -398,18 +410,40 @@ configureTwitchEvents((eventType, event) => {
       ? resolveSevenTvEmotes(event.room_id, event.message.text)
       : Promise.resolve([])
     ).then((emotes) => {
-      const sevenTvBase = emotes.find((item) => !item.isZeroWidth);
-      const emote = nativeEmote ?? sevenTvBase ?? emotes[0];
+      const stacks: Array<{ base: (typeof emotes)[number]; overlays: typeof emotes }> = [];
+      const leadingOverlays: typeof emotes = [];
+      for (const item of emotes) {
+        if (item.isZeroWidth && stacks.length) stacks.at(-1)!.overlays.push(item);
+        else if (item.isZeroWidth) leadingOverlays.push(item);
+        else if (!item.isZeroWidth) stacks.push({ base: item, overlays: [] });
+      }
+      const sevenTvBase = stacks[0]?.base ?? emotes[0];
+      const emote = nativeEmote ?? sevenTvBase;
       if (emote && canSpawnChatEmote()) {
+        const firstOverlays = nativeEmote
+          ? leadingOverlays
+          : stacks[0]?.overlays ?? [];
+        const allowlist = new Set(canvasStore.chatEmoteSettings.additionalEmotes.map((name) => name.toLowerCase()));
+        const additional = stacks
+          .filter((_stack, index) => !!nativeEmote || index > 0)
+          .filter((stack) => allowlist.has(stack.base.name.toLowerCase()))
+          .map((stack) => ({
+            id: randomUUID(),
+            emoteId: stack.base.id,
+            name: stack.base.name,
+            imageUrl: stack.base.imageUrl,
+            overlays: stack.overlays.map((item) => ({ emoteId: item.id, name: item.name, imageUrl: item.imageUrl })),
+          }));
         markChatEmoteSpawned();
         io.to("overlay").emit("chat-emote:spawn", {
           id: randomUUID(),
           emoteId: emote.id,
           name: emote.name,
           imageUrl: emote.imageUrl,
-          overlays: emotes
-            .filter((item) => item.isZeroWidth && item.id !== emote.id)
+          overlays: firstOverlays
+            .filter((item) => item.id !== emote.id)
             .map((item) => ({ emoteId: item.id, name: item.name, imageUrl: item.imageUrl })),
+          additional,
           sender: event.chatter_user_name || event.chatter_user_login || "Viewer",
           senderLogin: emoteSender,
           senderColor: event.chatter_color,

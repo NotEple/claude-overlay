@@ -67,8 +67,8 @@ export function TooltipProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     const element = tooltipElement.current;
-    if (!element) return;
-    element.style.marginLeft = "0px";
+    if (!element || !tooltip) return;
+    element.style.left = `${tooltip.left}px`;
     const rect = element.getBoundingClientRect();
     const correction =
       rect.left < EDGE_GAP
@@ -76,7 +76,7 @@ export function TooltipProvider({ children }: { children: ReactNode }) {
         : rect.right > window.innerWidth - EDGE_GAP
           ? window.innerWidth - EDGE_GAP - rect.right
           : 0;
-    element.style.marginLeft = `${correction}px`;
+    element.style.left = `${tooltip.left + correction}px`;
   }, [tooltip]);
 
   useEffect(() => {

@@ -83,17 +83,11 @@ export async function resolveSevenTvEmotes(twitchUserId: string, message: string
   try {
     const emoteSet = await loadEmoteSet(twitchUserId);
     const matches: ResolvedSevenTvEmote[] = [];
-    let foundBase = false;
     for (const token of message.split(/\s+/)) {
       const emote = emoteSet.get(token);
       if (!emote) continue;
-      if (!foundBase) {
-        matches.push(emote);
-        foundBase = !emote.isZeroWidth;
-        continue;
-      }
-      if (emote.isZeroWidth) matches.push(emote);
-      else break;
+      matches.push(emote);
+      if (matches.length >= 20) break;
     }
     return matches;
   } catch (error) {

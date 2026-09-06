@@ -77,6 +77,7 @@ export function useSocket({
       lifetimeSeconds: 12,
       maxVisible: 20,
       blacklist: [],
+      additionalEmotes: [],
     });
   const [chatEmoteSpawn, setChatEmoteSpawn] =
     useState<ChatEmoteSpawn | null>(null);

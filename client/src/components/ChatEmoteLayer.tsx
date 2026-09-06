@@ -38,10 +38,18 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
 
   useEffect(() => {
     if (!spawn) return;
-    const queuedSpawn = spawn;
+    const queuedSpawns: ChatEmoteSpawn[] = [
+      { ...spawn, additional: undefined },
+      ...(spawn.additional ?? []).map((item) => ({
+        ...spawn,
+        ...item,
+        additional: undefined,
+      })),
+    ];
     // Resolve image dimensions serially so a slower CDN response cannot let a
     // later chat message jump ahead in parade mode.
-    spawnQueueRef.current = spawnQueueRef.current.then(() => new Promise<void>((resolve) => {
+    for (const queuedSpawn of queuedSpawns) {
+      spawnQueueRef.current = spawnQueueRef.current.then(() => new Promise<void>((resolve) => {
       const activeSettings = settingsRef.current;
       if (!activeSettings.enabled && !preview) {
         resolve();
@@ -105,14 +113,19 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
         bornAt: performance.now(),
         aspectRatio,
       };
-      setParticles((current) => activeSettings.motion === "parade"
-        ? (current.length >= activeSettings.maxVisible ? current : [...current, particle])
-        : [...current, particle].slice(-activeSettings.maxVisible));
+      setParticles((current) => {
+        const next = activeSettings.motion === "parade"
+          ? (current.length >= activeSettings.maxVisible ? current : [...current, particle])
+          : [...current, particle].slice(-activeSettings.maxVisible);
+        particlesRef.current = next;
+        return next;
+      });
       resolve();
       };
       image.onerror = () => resolve();
       image.src = queuedSpawn.imageUrl;
-    }));
+      }));
+    }
   }, [preview, spawn]);
 
   useEffect(() => {

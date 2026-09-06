@@ -109,7 +109,28 @@ export function getChatEmoteSettings(): ChatEmoteSettings | undefined {
   return db.data.chatEmoteSettings;
 }
 
+export async function initializeChatEmoteSettingsStore(): Promise<ChatEmoteSettings | undefined> {
+  if (!postgres) return db.data.chatEmoteSettings;
+  await postgres.query(`CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  const result = await postgres.query("SELECT value FROM app_settings WHERE key = 'chat_emotes'");
+  if (result.rows[0]?.value) return result.rows[0].value as ChatEmoteSettings;
+  if (db.data.chatEmoteSettings) {
+    await postgres.query("INSERT INTO app_settings (key, value) VALUES ('chat_emotes', $1::jsonb) ON CONFLICT (key) DO NOTHING", [JSON.stringify(db.data.chatEmoteSettings)]);
+  }
+  return db.data.chatEmoteSettings;
+}
+
 export async function saveChatEmoteSettings(settings: ChatEmoteSettings): Promise<void> {
+  if (postgres) {
+    await postgres.query(`INSERT INTO app_settings (key, value, updated_at)
+      VALUES ('chat_emotes', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, [JSON.stringify(settings)]);
+    return;
+  }
   db.data.chatEmoteSettings = settings;
   await db.write();
 }

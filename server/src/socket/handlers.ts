@@ -226,7 +226,9 @@ export function registerSocketHandlers(
       !Number.isFinite(settings.lifetimeSeconds) || settings.lifetimeSeconds < 2 || settings.lifetimeSeconds > 120 ||
       !Number.isInteger(settings.maxVisible) || settings.maxVisible < 1 || settings.maxVisible > 100 ||
       !Array.isArray(settings.blacklist) || settings.blacklist.length > 100 ||
-      settings.blacklist.some((name) => typeof name !== "string" || !/^[a-z0-9_]{1,25}$/i.test(name))
+      settings.blacklist.some((name) => typeof name !== "string" || !/^[a-z0-9_]{1,25}$/i.test(name)) ||
+      !Array.isArray(settings.additionalEmotes) || settings.additionalEmotes.length > 100 ||
+      settings.additionalEmotes.some((name) => typeof name !== "string" || !/^[a-z0-9_]{1,64}$/i.test(name))
     ) return;
     store.chatEmoteSettings = { ...settings };
     io.emit("chat-emote:settings", store.chatEmoteSettings);

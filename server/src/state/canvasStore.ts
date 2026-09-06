@@ -49,6 +49,9 @@ export const canvasStore: CanvasStore = {
       blacklist: Array.isArray(stored?.blacklist)
         ? stored.blacklist.filter((name) => /^[a-z0-9_]{1,25}$/i.test(name)).slice(0, 100)
         : [],
+      additionalEmotes: Array.isArray(stored?.additionalEmotes)
+        ? stored.additionalEmotes.filter((name) => /^[a-z0-9_]{1,64}$/i.test(name)).slice(0, 100)
+        : [],
     };
   })(),
   ...studio,

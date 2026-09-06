@@ -96,6 +96,7 @@ export interface ChatEmoteSettings {
   lifetimeSeconds: number;
   maxVisible: number;
   blacklist: string[];
+  additionalEmotes: string[];
 }
 export interface ChatEmoteSpawn {
   id: string;
@@ -103,6 +104,7 @@ export interface ChatEmoteSpawn {
   name: string;
   imageUrl: string;
   overlays?: Array<{ emoteId: string; name: string; imageUrl: string }>;
+  additional?: Array<{ id: string; emoteId: string; name: string; imageUrl: string; overlays?: Array<{ emoteId: string; name: string; imageUrl: string }> }>;
   sender: string;
   senderLogin?: string;
   senderColor?: string;

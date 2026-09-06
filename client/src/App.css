@@ -1232,7 +1232,7 @@ button {
   position: fixed;
   z-index: 10000;
   box-sizing: border-box;
-  width: fit-content;
+  width: max-content;
   max-width: min(280px, calc(100vw - 20px));
   padding: 7px 9px;
   border: 1px solid color-mix(in srgb, var(--accent-border) 48%, #444);
@@ -1246,7 +1246,7 @@ button {
   text-align: left;
   pointer-events: none;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   animation: app-tooltip-in 120ms ease-out both;
 }
 .app-tooltip--above {
