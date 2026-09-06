@@ -38,9 +38,12 @@ export const canvasStore: CanvasStore = {
         ? stored!.nameBackgroundColor
         : "#08080a",
       nameFontSize: Math.min(32, Math.max(9, stored?.nameFontSize ?? 12)),
-      motion: (["walls", "floor", "parade"] as const).includes(stored?.motion as any)
+      motion: (["walls", "floor", "parade", "corners"] as const).includes(stored?.motion as any)
         ? stored!.motion
         : "floor",
+      direction: (["left", "right"] as const).includes(stored?.direction as any)
+        ? stored!.direction
+        : "left",
       gravity: Math.min(2400, Math.max(100, stored?.gravity ?? 900)),
       size: Math.min(100, Math.max(24, stored?.size ?? 40)),
       speed: stored?.speed ?? 180,

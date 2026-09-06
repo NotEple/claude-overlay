@@ -89,7 +89,8 @@ export interface ChatEmoteSettings {
   nameBackgroundEnabled: boolean;
   nameBackgroundColor: string;
   nameFontSize: number;
-  motion: "walls" | "floor" | "parade";
+  motion: "walls" | "floor" | "parade" | "corners";
+  direction: "left" | "right";
   gravity: number;
   size: number;
   speed: number;

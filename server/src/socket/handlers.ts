@@ -219,7 +219,8 @@ export function registerSocketHandlers(
       typeof settings.nameBackgroundEnabled !== "boolean" ||
       typeof settings.nameBackgroundColor !== "string" || !/^#[0-9a-f]{6}$/i.test(settings.nameBackgroundColor) ||
       !Number.isFinite(settings.nameFontSize) || settings.nameFontSize < 9 || settings.nameFontSize > 32 ||
-      !["walls", "floor", "parade"].includes(settings.motion) ||
+      !["walls", "floor", "parade", "corners"].includes(settings.motion) ||
+      !["left", "right"].includes(settings.direction) ||
       !Number.isFinite(settings.gravity) || settings.gravity < 100 || settings.gravity > 2400 ||
       !Number.isFinite(settings.size) || settings.size < 24 || settings.size > 100 ||
       !Number.isFinite(settings.speed) || settings.speed < 40 || settings.speed > 600 ||

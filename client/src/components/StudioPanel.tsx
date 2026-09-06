@@ -1569,47 +1569,51 @@ export function StudioPanel(props: StudioPanelProps) {
               )}
               <label className="chat-emote-setting chat-emote-setting--motion">
                 <span>Movement</span>
-                <span
-                  className="chat-emote-motion-toggle"
-                  title="Choose a bottom parade, gravity-based floor bounces, or continuous wall-to-wall movement"
+                <select
+                  style={fieldStyle}
+                  value={props.chatEmoteSettings.motion}
+                  onChange={(event) => {
+                    const motion = event.target.value as ChatEmoteSettings["motion"];
+                    props.onChatEmoteSettingsChange({ ...props.chatEmoteSettings, motion });
+                    toast.success(
+                      motion === "parade" ? "Using the bottom parade"
+                        : motion === "corners" ? "Emotes will travel around the corners"
+                          : motion === "floor" ? "Using floor bounce physics"
+                            : "Using wall-to-wall bounce",
+                    );
+                  }}
+                  title="Choose how chat emotes move across the overlay"
                 >
-                  {(["parade", "floor", "walls"] as const).map((motion) => (
-                    <button
-                      key={motion}
-                      type="button"
-                      className={
-                        props.chatEmoteSettings.motion === motion
-                          ? "active"
-                          : ""
-                      }
-                      aria-pressed={props.chatEmoteSettings.motion === motion}
-                      onClick={() => {
-                        if (props.chatEmoteSettings.motion === motion) return;
-                        props.onChatEmoteSettingsChange({
-                          ...props.chatEmoteSettings,
-                          motion,
-                        });
-                        toast.success(
-                          motion === "parade"
-                            ? "Emotes will parade along the bottom in chat order"
-                            : motion === "floor"
-                              ? "Using floor bounce physics"
-                              : "Using wall-to-wall bounce",
-                        );
-                      }}
-                      title={
-                        motion === "parade"
-                          ? "Slide emotes right-to-left along the bottom in the order chat sends them"
-                          : motion === "floor"
-                            ? "Use gravity and floor-impact physics"
-                            : "Bounce continuously between all screen edges"
-                      }
-                    >
-                      {motion === "parade" ? "Parade" : motion === "floor" ? "Floor" : "Walls"}
-                    </button>
-                  ))}
-                </span>
+                  <option value="parade">Bottom parade</option>
+                  <option value="corners">Corner route</option>
+                  <option value="floor">Floor bounce</option>
+                  <option value="walls">Wall bounce</option>
+                </select>
               </label>
+              {(props.chatEmoteSettings.motion === "parade" || props.chatEmoteSettings.motion === "corners") && (
+                <label className="chat-emote-setting">
+                  <span>Direction</span>
+                  <select
+                    style={fieldStyle}
+                    value={props.chatEmoteSettings.direction}
+                    onChange={(event) => {
+                      const direction = event.target.value as ChatEmoteSettings["direction"];
+                      props.onChatEmoteSettingsChange({ ...props.chatEmoteSettings, direction });
+                      toast.success(`Emotes will travel ${direction}`);
+                    }}
+                    title={props.chatEmoteSettings.motion === "parade"
+                      ? "Choose whether the parade travels left or right"
+                      : "Choose which bottom corner the route starts from"}
+                  >
+                    <option value="left">
+                      {props.chatEmoteSettings.motion === "corners" ? "Counter-clockwise · start right" : "Right to left"}
+                    </option>
+                    <option value="right">
+                      {props.chatEmoteSettings.motion === "corners" ? "Clockwise · start left" : "Left to right"}
+                    </option>
+                  </select>
+                </label>
+              )}
             </div>
             <div className="chat-emote-card">
               <strong className="chat-emote-card__title">
@@ -1674,7 +1678,7 @@ export function StudioPanel(props: StudioPanelProps) {
                   }}
                   placeholder="PianoTime"
                   maxLength={64}
-                  title="Enter the exact case-insensitive 7TV emote name"
+                  title="Enter the exact case-insensitive Twitch or 7TV emote name"
                 />
                 <button
                   type="button"

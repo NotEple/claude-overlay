@@ -22,6 +22,7 @@ export interface ResolvedSevenTvEmote {
   name: string;
   imageUrl: string;
   isZeroWidth: boolean;
+  position?: number;
 }
 
 interface CachedEmoteSet {
@@ -118,10 +119,10 @@ export async function resolveSevenTvEmotes(twitchUserId: string, message: string
   try {
     const emoteSet = await loadEmoteSet(twitchUserId);
     const matches: ResolvedSevenTvEmote[] = [];
-    for (const token of message.split(/\s+/)) {
-      const emote = emoteSet.get(token);
+    for (const match of message.matchAll(/\S+/g)) {
+      const emote = emoteSet.get(match[0]);
       if (!emote) continue;
-      matches.push(emote);
+      matches.push({ ...emote, position: match.index });
       if (matches.length >= 20) break;
     }
     return matches;

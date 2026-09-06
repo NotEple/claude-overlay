@@ -162,7 +162,7 @@ const sections = [
       ],
       [
         "Studio · Emotes",
-        "Choose an ordered bottom parade, floor physics, or wall bounce; tune size, speed, labels, gravity, and limits, blacklist chatters, allow selected emotes after the first emote in a message, and preview locally. Wide and zero-width emotes retain their intended layout.",
+        "Choose a directional bottom parade, a mirrored corner route, floor physics, or wall bounce; tune size, speed, labels, gravity, and limits, blacklist chatters, allow selected emotes after the first emote in a message, and preview locally. Wide and zero-width emotes retain their intended layout.",
       ],
       [
         "Show my cursor on overlay",

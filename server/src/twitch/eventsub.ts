@@ -12,7 +12,7 @@ type ChatCommandEvent = {
   chatter_user_name?: string;
   chatter_color?: string;
   room_id?: string;
-  native_emotes?: Array<{ id: string; name: string; imageUrl: string }>;
+  native_emotes?: Array<{ id: string; name: string; imageUrl: string; position: number }>;
   chatter_role?: ChatPermission;
 };
 type EventHandler = (type: TriggerEventType, event: ChatCommandEvent) => void;
@@ -67,7 +67,7 @@ export function restartTwitchEvents() {
         : badges.vip
           ? 'vip'
           : 'everyone';
-    const nativeEmotes: Array<{ id: string; name: string; imageUrl: string }> = [];
+    const nativeEmotes: Array<{ id: string; name: string; imageUrl: string; position: number }> = [];
     for (const [id, ranges] of Object.entries(tags.emotes ?? {})) {
       for (const range of ranges ?? []) {
         const [start, end] = range.split('-').map(Number);
@@ -76,11 +76,11 @@ export function restartTwitchEvents() {
           id,
           name: message.slice(start, end + 1),
           imageUrl: `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(id)}/default/dark/2.0`,
+          position: start,
         });
-        if (nativeEmotes.length >= 1) break;
       }
-      if (nativeEmotes.length >= 1) break;
     }
+    nativeEmotes.sort((a, b) => a.position - b.position);
     emitTwitchEvent('chat-command', {
       channel,
       message: { text: message },

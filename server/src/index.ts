@@ -405,27 +405,30 @@ configureTwitchEvents((eventType, event) => {
     }, lifetimeMs);
   };
   if (eventType === "chat-command" && canvasStore.chatEmoteSettings.enabled && !emoteSenderBlocked && canSpawnChatEmote()) {
-    const nativeEmote = event.native_emotes?.[0];
-    if (nativeEmote || event.room_id) void (event.room_id
+    const nativeEmotes = event.native_emotes ?? [];
+    if (nativeEmotes.length || event.room_id) void (event.room_id
       ? resolveSevenTvEmotes(event.room_id, event.message.text)
       : Promise.resolve([])
     ).then((emotes) => {
-      const stacks: Array<{ base: (typeof emotes)[number]; overlays: typeof emotes }> = [];
-      const leadingOverlays: typeof emotes = [];
-      for (const item of emotes) {
+      type PositionedEmote = (typeof emotes)[number];
+      const nativePositions = new Set(nativeEmotes.map((item) => item.position));
+      const orderedEmotes: PositionedEmote[] = [
+        ...nativeEmotes.map((item) => ({ ...item, isZeroWidth: false })),
+        ...emotes.filter((item) => !nativePositions.has(item.position ?? -1)),
+      ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      const stacks: Array<{ base: PositionedEmote; overlays: PositionedEmote[] }> = [];
+      const leadingOverlays: PositionedEmote[] = [];
+      for (const item of orderedEmotes) {
         if (item.isZeroWidth && stacks.length) stacks.at(-1)!.overlays.push(item);
         else if (item.isZeroWidth) leadingOverlays.push(item);
         else if (!item.isZeroWidth) stacks.push({ base: item, overlays: [] });
       }
-      const sevenTvBase = stacks[0]?.base ?? emotes[0];
-      const emote = nativeEmote ?? sevenTvBase;
+      const emote = stacks[0]?.base ?? leadingOverlays[0];
       if (emote && canSpawnChatEmote()) {
-        const firstOverlays = nativeEmote
-          ? leadingOverlays
-          : stacks[0]?.overlays ?? [];
+        const firstOverlays = stacks[0]?.overlays ?? leadingOverlays;
         const allowlist = new Set(canvasStore.chatEmoteSettings.additionalEmotes.map((name) => name.toLowerCase()));
         const additional = stacks
-          .filter((_stack, index) => !!nativeEmote || index > 0)
+          .filter((_stack, index) => index > 0)
           .filter((stack) => allowlist.has(stack.base.name.toLowerCase()))
           .map((stack) => ({
             id: randomUUID(),

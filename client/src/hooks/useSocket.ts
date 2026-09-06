@@ -71,6 +71,7 @@ export function useSocket({
       nameBackgroundColor: "#08080a",
       nameFontSize: 12,
       motion: "floor",
+      direction: "left",
       gravity: 900,
       size: 40,
       speed: 180,
