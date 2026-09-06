@@ -27,6 +27,7 @@ const subscriptions = [
   ["channel.cheer", "1", (id: string) => ({ broadcaster_user_id: id })],
   ["channel.raid", "1", (id: string) => ({ to_broadcaster_user_id: id })],
   ["channel.channel_points_custom_reward_redemption.add", "1", (id: string) => ({ broadcaster_user_id: id })],
+  ["channel.ban", "1", (id: string) => ({ broadcaster_user_id: id })],
 ] as const;
 
 export async function registerEventSubscriptions(auth: StoredEventAuth) {
@@ -84,7 +85,9 @@ export function createEventWebhook(emitEvent: (type: TriggerEventType, event: an
     if (messageType === "notification") {
       const messageId = String(req.header("Twitch-Eventsub-Message-Id") ?? "");
       if (isDuplicateMessage(messageId)) return res.sendStatus(204);
-      const type = eventTypes[payload.subscription?.type];
+      const type = payload.subscription?.type === "channel.ban"
+        ? (payload.event?.is_permanent ? "ban" : "timeout")
+        : eventTypes[payload.subscription?.type];
       if (type) emitEvent(type, { ...payload.event, channel: payload.event?.broadcaster_user_login ?? payload.event?.to_broadcaster_user_login });
     }
     return res.sendStatus(204);

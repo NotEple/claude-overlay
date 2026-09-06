@@ -735,6 +735,8 @@ export function StudioPanel(props: StudioPanelProps) {
                   <option value="channel-points">
                     Channel point redemption
                   </option>
+                  <option value="ban">Permanent ban</option>
+                  <option value="timeout">Timeout</option>
                 </select>
                 <select
                   style={fieldStyle}
@@ -872,7 +874,7 @@ export function StudioPanel(props: StudioPanelProps) {
                     value={chatMessage}
                     onChange={(e) => setChatMessage(e.target.value)}
                     placeholder="Thanks {user} for the {bits} Bits!"
-                    title="Message sent by the connected broadcaster account. Event variables in braces are replaced automatically."
+                    title="Message sent by the connected chatbot account. Event variables in braces are replaced automatically."
                   />
                 </label>
                 <div
@@ -890,6 +892,10 @@ export function StudioPanel(props: StudioPanelProps) {
                   <code title="Number of Bits cheered">{"{bits}"}</code>
                   <code title="Channel point reward title">{"{reward}"}</code>
                   <code title="Channel receiving the event">{"{channel}"}</code>
+                  <code title="Moderator who issued the ban or timeout">{"{moderator}"}</code>
+                  <code title="Moderation reason">{"{reason}"}</code>
+                  <code title="Permanent or timeout duration">{"{duration}"}</code>
+                  <code title="Either ban or timeout">{"{banType}"}</code>
                 </div>
               </div>
             )}
@@ -1349,6 +1355,7 @@ export function StudioPanel(props: StudioPanelProps) {
             {(eventStatus?.channels ?? []).map((status) => {
               const channel = status.channel;
               const hasLegacyChatAccess = status.scopes.includes("user:write:chat");
+              const hasBanAccess = status.scopes.includes("channel:moderate");
               return (
                 <div
                   key={channel}
@@ -1395,13 +1402,18 @@ export function StudioPanel(props: StudioPanelProps) {
                     )}
                   </div>
                   <div style={{ color: "#8f99a8", fontSize: 10 }}>
-                    Read-only access for follows, subscriptions, Bits, channel
-                    points, and Hype Trains.
+                    Event access for follows, subscriptions, Bits, channel
+                    points, Hype Trains, bans, and timeouts.
                   </div>
                   {status.connected && hasLegacyChatAccess && (
                     <div style={{ color: "#fbbf24", fontSize: 11 }}>
                       This connection still has the old chat-writing permission.
                       Reconnect it to replace that token with event-only access.
+                    </div>
+                  )}
+                  {status.connected && !hasBanAccess && (
+                    <div style={{ color: "#fbbf24", fontSize: 11 }}>
+                      Reconnect this broadcaster once to enable ban and timeout events.
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
@@ -1413,6 +1425,8 @@ export function StudioPanel(props: StudioPanelProps) {
                         "bits",
                         "raid",
                         "channel-points",
+                        "ban",
+                        "timeout",
                       ] as const
                     ).map((type) => (
                       <button

@@ -191,6 +191,9 @@ function presentElement(
 type TriggerEventPayload = Record<string, any>;
 
 function renderEventMessage(template: string, event: TriggerEventPayload) {
+  const timeoutMinutes = event.ends_at && event.banned_at
+    ? Math.max(1, Math.ceil((Date.parse(event.ends_at) - Date.parse(event.banned_at)) / 60_000))
+    : 0;
   const values: Record<string, string> = {
     user: String(event.user_name ?? event.chatter_user_name ?? event.from_broadcaster_user_name ?? "Viewer"),
     months: String(event.cumulative_months ?? event.duration_months ?? 0),
@@ -198,8 +201,12 @@ function renderEventMessage(template: string, event: TriggerEventPayload) {
     bits: String(event.bits ?? 0),
     reward: String(event.reward?.title ?? event.reward_title ?? ""),
     channel: String(event.channel ?? event.broadcaster_user_login ?? ""),
+    moderator: String(event.moderator_user_name ?? event.moderator_user_login ?? "Moderator"),
+    reason: String(event.reason ?? ""),
+    duration: event.is_permanent ? "permanent" : `${timeoutMinutes} minute${timeoutMinutes === 1 ? "" : "s"}`,
+    bantype: event.is_permanent ? "ban" : "timeout",
   };
-  return template.replace(/\{(user|months|viewers|bits|reward|channel)\}/gi, (_, key: string) => values[key.toLowerCase()] ?? "").slice(0, 500);
+  return template.replace(/\{(user|months|viewers|bits|reward|channel|moderator|reason|duration|banType)\}/gi, (_, key: string) => values[key.toLowerCase()] ?? "").slice(0, 500);
 }
 
 async function sendEventChatMessage(step: TriggerStep, event: TriggerEventPayload) {

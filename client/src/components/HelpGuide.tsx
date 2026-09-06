@@ -134,11 +134,11 @@ const sections = [
       ],
       [
         "Twitch event filters",
-        "Limit subscriptions by months, gifts by count, raids by viewers, Bits by amount, or channel points by reward title.",
+        "Run actions for follows, subscriptions, gifts, raids, Bits, channel points, permanent bans, or timeouts. Limit numeric and reward events with their matching filters.",
       ],
       [
         "Chat message variables",
-        "Messages can insert {user}, {months}, {viewers}, {bits}, {reward}, and {channel}. The connected broadcaster sends the message.",
+        "Messages can insert {user}, {months}, {viewers}, {bits}, {reward}, {channel}, {moderator}, {reason}, {duration}, and {banType}. The dedicated chatbot sends the message.",
       ],
       [
         "Command action timing",

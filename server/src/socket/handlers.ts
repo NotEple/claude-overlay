@@ -348,7 +348,7 @@ function validTrigger(value: any): boolean {
   const allowed = new Set(["id", "name", "enabled", "event", "match", "minimum", "channel", "action", "targetId", "cooldownSeconds", "placement", "durationSeconds", "flyDirection", "timing", "delaySeconds", "chatMessage", "permission", "steps"]);
   return value && typeof value === "object" && Object.keys(value).every(key => allowed.has(key))
     && validLabel(value.id, 100) && validLabel(value.name, 60)
-    && ["chat-command", "follow", "subscribe", "gift-subscribe", "raid", "bits", "channel-points"].includes(value.event)
+    && ["chat-command", "follow", "subscribe", "gift-subscribe", "raid", "bits", "channel-points", "ban", "timeout"].includes(value.event)
     && validTriggerStep({ action: value.action, targetId: value.targetId, placement: value.placement, durationSeconds: value.durationSeconds, flyDirection: value.flyDirection, timing: value.timing, delaySeconds: value.delaySeconds, chatMessage: value.chatMessage })
     && typeof value.enabled === "boolean" && Number.isFinite(value.cooldownSeconds) && value.cooldownSeconds >= 0 && value.cooldownSeconds <= 86400
     && (value.match === undefined || (typeof value.match === "string" && value.match.length <= 100))
