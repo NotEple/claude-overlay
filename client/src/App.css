@@ -969,6 +969,12 @@ button {
 }
 .chat-emote-stack {
   position: relative;
+  flex: 0 0 auto;
+}
+.chat-emote-sequence {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
 }
 .chat-emote-stack img {
   display: block;

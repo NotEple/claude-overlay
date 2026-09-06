@@ -8,6 +8,7 @@ interface Particle extends ChatEmoteSpawn {
   vy: number;
   bornAt: number;
   aspectRatio: number;
+  sequenceAspectRatios: number[];
 }
 
 interface ChatEmoteLayerProps {
@@ -38,34 +39,28 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
 
   useEffect(() => {
     if (!spawn) return;
-    const queuedSpawns: ChatEmoteSpawn[] = [
-      { ...spawn, additional: undefined },
-      ...(spawn.additional ?? []).map((item) => ({
-        ...spawn,
-        ...item,
-        additional: undefined,
-      })),
-    ];
     // Resolve image dimensions serially so a slower CDN response cannot let a
     // later chat message jump ahead in parade mode.
-    for (const queuedSpawn of queuedSpawns) {
-      spawnQueueRef.current = spawnQueueRef.current.then(() => new Promise<void>((resolve) => {
+    const queuedSpawn = spawn;
+    spawnQueueRef.current = spawnQueueRef.current.then(async () => {
       const activeSettings = settingsRef.current;
-      if (!activeSettings.enabled && !preview) {
-        resolve();
-        return;
-      }
-      const image = new Image();
-      image.onload = () => {
+      if (!activeSettings.enabled && !preview) return;
+      const sequence = [
+        { imageUrl: queuedSpawn.imageUrl },
+        ...(queuedSpawn.additional ?? []),
+      ];
+      const sequenceAspectRatios = await Promise.all(sequence.map((item) => new Promise<number>((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(Math.max(0.5, Math.min(4, image.naturalWidth / Math.max(1, image.naturalHeight))));
+        image.onerror = () => resolve(1);
+        image.src = item.imageUrl;
+      })));
       const container = containerRef.current;
       const width = container?.clientWidth || 1920;
       const height = container?.clientHeight || 1080;
       const scale = preview ? 0.42 : 1;
       const size = activeSettings.size * scale;
-      const aspectRatio = Math.max(
-        0.5,
-        Math.min(4, image.naturalWidth / Math.max(1, image.naturalHeight)),
-      );
+      const aspectRatio = sequenceAspectRatios.reduce((sum, ratio) => sum + ratio, 0);
       const particleWidth = size * aspectRatio;
       const speed = activeSettings.speed * scale;
       const labelHeight = activeSettings.showNames
@@ -112,6 +107,7 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
         vy,
         bornAt: performance.now(),
         aspectRatio,
+        sequenceAspectRatios,
       };
       setParticles((current) => {
         const next = activeSettings.motion === "parade"
@@ -120,12 +116,7 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
         particlesRef.current = next;
         return next;
       });
-      resolve();
-      };
-      image.onerror = () => resolve();
-      image.src = queuedSpawn.imageUrl;
-      }));
-    }
+    });
   }, [preview, spawn]);
 
   useEffect(() => {
@@ -230,22 +221,30 @@ export function ChatEmoteLayer({ spawn, settings, preview = false }: ChatEmoteLa
               {particle.sender}
             </span>
           )}
-          <div
-            className="chat-emote-stack"
-            style={{
-              width: settings.size * scale * particle.aspectRatio,
-              height: settings.size * scale,
-            }}
-          >
-            <img src={particle.imageUrl} alt={particle.name} draggable={false} />
-            {particle.overlays?.map((overlay, index) => (
-              <img
-                key={`${overlay.emoteId}-${index}`}
-                className="chat-emote-stack__overlay"
-                src={overlay.imageUrl}
-                alt={overlay.name}
-                draggable={false}
-              />
+          <div className="chat-emote-sequence">
+            {[
+              { emoteId: particle.emoteId, name: particle.name, imageUrl: particle.imageUrl, overlays: particle.overlays },
+              ...(particle.additional ?? []),
+            ].map((item, sequenceIndex) => (
+              <div
+                key={`${item.emoteId}-${sequenceIndex}`}
+                className="chat-emote-stack"
+                style={{
+                  width: settings.size * scale * (particle.sequenceAspectRatios[sequenceIndex] ?? 1),
+                  height: settings.size * scale,
+                }}
+              >
+                <img src={item.imageUrl} alt={item.name} draggable={false} />
+                {item.overlays?.map((overlay, overlayIndex) => (
+                  <img
+                    key={`${overlay.emoteId}-${overlayIndex}`}
+                    className="chat-emote-stack__overlay"
+                    src={overlay.imageUrl}
+                    alt={overlay.name}
+                    draggable={false}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         </div>
